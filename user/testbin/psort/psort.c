@@ -184,7 +184,7 @@ complainx(const char *fmt, ...)
 	va_end(ap);
 
 	/* Write the message in one go so it's atomic */
-	write(STDERR_FILENO, buf, strlen(buf));
+	(void)write(STDERR_FILENO, buf, strlen(buf));
 }
 
 static
@@ -200,7 +200,7 @@ complain(const char *fmt, ...)
 	va_end(ap);
 
 	/* Write the message in one go so it's atomic */
-	write(STDERR_FILENO, buf, strlen(buf));
+	(void)write(STDERR_FILENO, buf, strlen(buf));
 }
 
 ////////////////////////////////////////////////////////////
