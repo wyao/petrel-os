@@ -47,7 +47,7 @@
 ////////////////////////////////////////////////////////////
 // words
 
-static const char word8[] = "ziggurat";
+static const char word8[] = "Dalemark";
 static char word4050[4051];
 static char word16320[16321];
 static char word65500[65501];
