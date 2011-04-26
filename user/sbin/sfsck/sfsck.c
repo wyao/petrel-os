@@ -405,6 +405,7 @@ addmemory(uint32_t ino, uint32_t linkcount)
 	}
 	inodes[ninodes].ino = ino;
 	inodes[ninodes].linkcount = linkcount;
+	ninodes++;
 }
 
 /* returns nonzero if directory already remembered */
