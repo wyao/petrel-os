@@ -387,21 +387,21 @@ addmemory(uint32_t ino, uint32_t linkcount)
 {
 	assert(ninodes <= maxinodes);
 	if (ninodes == maxinodes) {
-#ifdef NO_REALLOC
 		int newmax = (maxinodes+1)*2;
-		void *p = domalloc(newmax * sizeof(struct inodememory));
+#ifdef NO_REALLOC
+		void *p = domalloc(newmax * sizeof(*inodes));
 		if (inodes) {
 			memcpy(p, inodes, ninodes);
 			free(inodes);
 		}
 		inodes = p;
 #else
-		maxinodes = (maxinodes+1)*2;
-		inodes = realloc(inodes, maxinodes * sizeof(uint32_t));
+		inodes = realloc(inodes, newmax * sizeof(*inodes));
 		if (inodes==NULL) {
 			errx(EXIT_FATAL, "Out of memory");
 		}
 #endif
+		maxinodes = newmax;
 	}
 	inodes[ninodes].ino = ino;
 	inodes[ninodes].linkcount = linkcount;
