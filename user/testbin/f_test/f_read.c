@@ -69,7 +69,7 @@ check_buffer(void)
 			errx(1, "Read error: %s", buffer);
 		}
 	}
-	
+
 	putchar(ch);
 }
 

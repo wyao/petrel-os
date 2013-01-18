@@ -78,13 +78,13 @@ int
 can_bg(void)
 {
 	int i;
-	
+
 	for (i = 0; i < MAXBG; i++) {
 		if (bgpids[i] == 0) {
 			return 1;
 		}
 	}
-	
+
 	return 0;
 }
 
@@ -271,9 +271,9 @@ cmd_exit(int ac, char *av[])
 		printf("Usage: exit [code]\n");
 		return 1;
 	}
-	
+
 	exit(code);
-	
+
 	return 0; /* quell the compiler warning */
 }
 
@@ -448,7 +448,7 @@ getcmd(char *buf, size_t len)
 		}
 	}
 	buf[pos] = 0;
-}	
+}
 
 /*
  * interactive

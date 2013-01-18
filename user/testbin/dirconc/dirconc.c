@@ -179,7 +179,7 @@ rename_proc(void)
 {
 	char name1[NAMESIZE], name2[NAMESIZE];
 	int ct;
-	
+
 	for (ct=0; ct<NTRIES; ct++) {
 		choose_name(name1, sizeof(name1));
 		choose_name(name2, sizeof(name2));
@@ -194,7 +194,7 @@ mkdir_proc(void)
 {
 	char name[NAMESIZE];
 	int ct;
-	
+
 	for (ct=0; ct<NTRIES; ct++) {
 		choose_name(name, sizeof(name));
 		say("pid %2d: mkdir  %s\n", (int)getpid(), name);
@@ -250,7 +250,7 @@ run(void)
 		pids[i*4+2] = dofork(rename_proc);
 		pids[i*4+3] = dofork(rmdir_proc);
 	}
-	
+
 	for (i=0; i<NPROCS*4; i++) {
 		if (pids[i]>=0) {
 			wp = waitpid(pids[i], &status, 0);
@@ -296,7 +296,7 @@ recursive_cleanup(const char *sofar, int depth)
 {
 	char buf[NAMESIZE*32];
 	int i;
-	
+
 	for (i=0; i<NNAMES; i++) {
 		snprintf(buf, sizeof(buf), "%s/%s", sofar, names[i]);
 		if (rmdir(buf)<0) {
@@ -317,7 +317,7 @@ void
 cleanup(void)
 {
 	recursive_cleanup(".", 0);
-	
+
 	chdir("..");
 	cleanup_rmdir(TESTDIR);
 }
@@ -329,9 +329,9 @@ main(int argc, char *argv[])
 {
 	const char *fs;
 	long seed = 0;
-	
+
 	say("Concurrent directory ops test\n");
-	
+
 	if (argc==0 || argv==NULL) {
 		say("Warning: argc is 0 - assuming you mean to run on lhd1: "
 		    "with seed 0\n");
@@ -348,15 +348,15 @@ main(int argc, char *argv[])
 		say("Usage: dirconc filesystem [random-seed]\n");
 		exit(1);
 	}
-	
+
 	srandom(seed);
 	setup(fs);
 	say("Starting in %s/%s\n", fs, TESTDIR);
-	
+
 	run();
-	
+
 	say("Cleaning up\n");
 	cleanup();
-	
+
 	return 0;
 }

@@ -105,7 +105,7 @@ initarray(void)
 	 */
 	srandom(533);
 
-	for (i = 0; i < SIZE; i++) {		
+	for (i = 0; i < SIZE; i++) {
 		A[i] = random();
 	}
 }

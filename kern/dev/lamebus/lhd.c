@@ -116,7 +116,7 @@ lhd_irq(void *vlh)
 {
 	struct lhd_softc *lh = vlh;
 	uint32_t val;
-	
+
 	val = lhd_rdreg(lh, LHD_REG_STAT);
 
 	switch (val & LHD_STATEMASK) {

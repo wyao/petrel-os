@@ -70,7 +70,7 @@ main(int argc, char **argv)
 	}
 
 	printf("Starting ctest: stride %d\n", stride);
-	
+
 	/*
 	 * Generate a huge linked list, with each entry pointing to
 	 * the slot STRIDE entries above it. As long as STRIDE and SIZE

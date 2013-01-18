@@ -74,7 +74,7 @@ whalemating(int nargs, char **args)
 {
 
 	int i, j, err=0;
-	
+
 	(void)nargs;
 	(void)args;
 

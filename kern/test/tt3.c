@@ -180,7 +180,7 @@ compute_thread(void *junk1, unsigned long num)
 				m2->m[i][j] = rand & 0xffff;
 			}
 		}
-		
+
 		for (i=0; i<DIM; i++) {
 			for (j=0; j<DIM; j++) {
 				tot = 0;
@@ -190,7 +190,7 @@ compute_thread(void *junk1, unsigned long num)
 				m3->m[i][j] = tot;
 			}
 		}
-		
+
 		tot = 0;
 		for (i=0; i<DIM; i++) {
 			tot += m3->m[i][i];

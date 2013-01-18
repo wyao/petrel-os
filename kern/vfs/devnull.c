@@ -107,7 +107,7 @@ devnull_create(void)
 		panic("Could not add null device: out of memory\n");
 	}
 
-	
+
 	dev->d_open = nullopen;
 	dev->d_close = nullclose;
 	dev->d_io = nullio;

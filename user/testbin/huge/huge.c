@@ -56,9 +56,9 @@ main()
 	for (i=0; i<NumPages; i++) {
 		sparse[i][0]=i;
 	}
-	
+
 	printf("stage [1] done\n");
-	
+
 	/* increment each location 5 times */
 	for (j=0; j<5; j++) {
 		for (i=0; i<NumPages; i++) {
@@ -66,9 +66,9 @@ main()
 		}
 		printf("stage [2.%d] done\n", j);
 	}
-	
+
 	printf("stage [2] done\n");
-	
+
 	/* check if the numbers are sane */
 	for (i=NumPages-1; i>=0; i--) {
 		if (sparse[i][0]!=i+5) {
@@ -76,9 +76,9 @@ main()
 			exit(1);
 		}
 	}
-	
+
 	printf("You passed!\n");
-	
+
 	return 0;
 }
 

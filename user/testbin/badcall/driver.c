@@ -283,7 +283,7 @@ runit(int op)
 
 	ops[op-'a'].f();
 }
-	
+
 int
 main(int argc, char **argv)
 {

@@ -80,6 +80,6 @@ lrandom_read(void *devdata, struct uio *uio)
 			return result;
 		}
 	}
-	
+
 	return 0;
 }

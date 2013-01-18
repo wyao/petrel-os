@@ -220,7 +220,7 @@ do_move(int player)
 	first = TRUE;
 	printf("Player %d (%c), your move\n", player,
 	       player == X_PLAYER ? 'X' : 'O');
-	
+
 	while (TRUE) {
 		printf("Which row [0-%d]: ", DIM-1);
 		if (read_string(answer, MAXSTRING) < 0)
@@ -314,7 +314,7 @@ win_row(int x, int marker)
 		if (board[x][i] != marker)
 			return(FALSE);
 	return(TRUE);
-}	
+}
 
 bool
 win_diag_left(int x, int y, int marker)

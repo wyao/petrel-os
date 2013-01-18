@@ -159,7 +159,7 @@ populate_initial_matrixes(int mynum)
 			m->m_data[i][j] = mynum+i-2*j;
 		}
 	}
-	
+
 	multiply(&mats[1], &mats[0], &mats[0]);
 }
 

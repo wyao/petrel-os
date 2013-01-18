@@ -63,7 +63,7 @@ main(void)
 		if (mkdir(dirname, 0755)) {
 			err(1, "%s: mkdir", dirname);
 		}
-		
+
 		strcat(dirname, "/");
 		strcat(dirname, onename);
 	}

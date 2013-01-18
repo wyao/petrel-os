@@ -231,7 +231,7 @@ struct vnode_ops {
 	int (*vop_rename)(struct vnode *vn1, const char *name1,
 			  struct vnode *vn2, const char *name2);
 
-	
+
 	int (*vop_lookup)(struct vnode *dir,
 			  char *pathname, struct vnode **result);
 	int (*vop_lookparent)(struct vnode *dir,

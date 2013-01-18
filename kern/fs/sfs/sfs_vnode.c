@@ -321,7 +321,7 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	uint32_t diskblock;
 	uint32_t fileblock;
 	int result;
-	
+
 	/* Allocate missing blocks if and only if we're writing */
 	int doalloc = (uio->uio_rw==UIO_WRITE);
 
@@ -427,7 +427,7 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 	saveres = uio->uio_resid;
 	diskres = SFS_BLOCKSIZE;
 	uio->uio_resid = diskres;
-	
+
 	result = sfs_rwblock(sfs, uio);
 
 	/*
@@ -730,7 +730,7 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot)
 
 	/* Write the entry. */
 	return sfs_writedir(sv, &sd, emptyslot);
-	
+
 }
 
 /*
@@ -1182,7 +1182,7 @@ sfs_truncate(struct vnode *v, off_t len)
 			vfs_biglock_release();
 			return result;
 		}
-		
+
 		hasnonzero = 0;
 		iddirty = 0;
 		for (j=0; j<SFS_DBPERIDB; j++) {
@@ -1311,7 +1311,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	newguy->sv_dirty = true;
 
 	*ret = &newguy->sv_v;
-	
+
 	vfs_biglock_release();
 	return 0;
 }
@@ -1428,7 +1428,7 @@ sfs_rename(struct vnode *d1, const char *n1,
 	if (result) {
 		goto puke;
 	}
-	
+
 	/* Increment the link count, and mark inode dirty */
 	g1->sv_i.sfi_linkcount++;
 	g1->sv_dirty = true;
@@ -1526,7 +1526,7 @@ sfs_lookup(struct vnode *v, char *path, struct vnode **ret)
 		vfs_biglock_release();
 		return ENOTDIR;
 	}
-	
+
 	result = sfs_lookonce(sv, path, &final, NULL);
 	if (result) {
 		vfs_biglock_release();
@@ -1616,7 +1616,7 @@ static const struct vnode_ops sfs_dirops = {
 	sfs_opendir,
 	sfs_close,
 	sfs_reclaim,
-	
+
 	ISDIR,   /* read */
 	ISDIR,   /* readlink */
 	UNIMP,   /* getdirentry */

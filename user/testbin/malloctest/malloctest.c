@@ -231,13 +231,13 @@ test2(void)
 {
 	volatile unsigned *x;
 	size_t size;
-	
+
 	printf("Entering malloc test 2.\n");
 	printf("Make sure you read and understand the comment in malloctest.c "
 	       "that\nexplains the conditions this test assumes.\n\n");
 
 	printf("Testing how much memory we can allocate:\n");
-	
+
 	for (size = HUGESIZE; (x = malloc(size))==NULL; size = size/2) {
 		printf("  %9lu bytes: failed\n", (unsigned long) size);
 	}
@@ -260,7 +260,7 @@ test2(void)
 	free((void *)x);
 	printf("Passed part 3\n");
 	printf("Allocating another block\n");
-	
+
 	x = malloc(size);
 	if (x==NULL) {
 		printf("FAILED: free didn't return the memory?\n");
@@ -369,7 +369,7 @@ test3(void)
 		return;
 	}
 	free(x);
-	
+
 	printf("Passed malloc test 3\n");
 }
 
@@ -518,7 +518,7 @@ void
 test567(int testno, unsigned long seed)
 {
 	static const int sizes[8] = { 13, 17, 69, 176, 433, 871, 1150, 6060 };
-	
+
 	void *ptrs[32];
 	int psizes[32];
 	int i, n, size, failed=0;

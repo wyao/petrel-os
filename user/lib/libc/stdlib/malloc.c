@@ -308,7 +308,7 @@ __malloc_split(struct mheader *mh, size_t size)
 
 	oldsize = M_SIZE(mh);
 	mh->mh_nextblock = M_MKFIELD(size + MBLOCKSIZE);
-	
+
 	mhnew = M_NEXT(mh);
 	if (mhnew==mhnext) {
 		errx(1, "malloc: Internal error (split screwed up?)");

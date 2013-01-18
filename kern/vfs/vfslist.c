@@ -440,7 +440,7 @@ vfs_doadd(const char *dname, int mountable, struct device *dev, struct fs *fs)
 	if (kd) {
 		kfree(kd);
 	}
-	
+
 	vfs_biglock_release();
 	return ENOMEM;
 }

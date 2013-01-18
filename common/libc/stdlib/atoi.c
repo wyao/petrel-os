@@ -71,7 +71,7 @@ atoi(const char *s)
 	while (*s) {
 		const char *where;
 		unsigned digit;
-		
+
 		/* look for the digit in the list of digits */
 		where = strchr(digits, *s);
 		if (where==NULL) {
@@ -90,12 +90,12 @@ atoi(const char *s)
 		/* look at the next character */
 		s++;
 	}
-	
+
 	/* handle negative numbers */
 	if (neg) {
 		return -val;
 	}
-	
+
 	/* done */
 	return val;
 }

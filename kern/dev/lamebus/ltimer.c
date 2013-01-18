@@ -96,7 +96,7 @@ config_ltimer(struct ltimer_softc *lt, int ltimerno)
 		bus_write_register(lt->lt_bus, lt->lt_buspos, LT_REG_COUNT,
 				   LT_GRANULARITY);
 	}
-	
+
 	return 0;
 }
 

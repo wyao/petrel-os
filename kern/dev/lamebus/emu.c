@@ -281,7 +281,7 @@ emu_doread(struct emu_softc *sc, uint32_t handle, uint32_t len,
 	if (result) {
 		goto out;
 	}
-	
+
 	result = uiomove(sc->e_iobuf, emu_rreg(sc, REG_IOLEN), uio);
 
 	uio->uio_offset = emu_rreg(sc, REG_OFFSET);
@@ -545,7 +545,7 @@ emufs_read(struct vnode *v, struct uio *uio)
 		if (result) {
 			return result;
 		}
-		
+
 		if (uio->uio_resid == oldresid) {
 			/* nothing read - EOF */
 			break;
@@ -831,7 +831,7 @@ emufs_namefile(struct vnode *v, struct uio *uio)
 	}
 
 	(void)uio;
-	
+
 	return EUNIMP;
 }
 

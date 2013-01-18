@@ -170,7 +170,7 @@ getdevice(char *path, char **subpath, struct vnode **startvn)
 			colon++;
 		}
 		*subpath = &path[colon+1];
-		
+
 		result = vfs_getroot(path, startvn);
 		if (result) {
 			return result;

@@ -341,7 +341,7 @@ lamebus_attach_interrupt(struct lamebus_softc *sc, int slot,
 
 	sc->ls_devdata[slot] = devdata;
 	sc->ls_irqfuncs[slot] = irqfunc;
-	
+
 	spinlock_release(&sc->ls_lock);
 }
 
@@ -366,7 +366,7 @@ lamebus_detach_interrupt(struct lamebus_softc *sc, int slot)
 
 	sc->ls_devdata[slot] = NULL;
 	sc->ls_irqfuncs[slot] = NULL;
-	
+
 	spinlock_release(&sc->ls_lock);
 }
 
@@ -475,7 +475,7 @@ lamebus_interrupt(struct lamebus_softc *lamebus)
 		/*
 		 * This slot is signalling an interrupt.
 		 */
-			
+
 		if ((lamebus->ls_slotsinuse & mask)==0) {
 			/*
 			 * No device driver is using this slot.

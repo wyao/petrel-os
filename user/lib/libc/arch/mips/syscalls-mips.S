@@ -59,7 +59,7 @@ sym:				; \
 
 /*
  * Now, the shared system call code.
- * The MIPS syscall ABI is as follows:	
+ * The MIPS syscall ABI is as follows:
  *
  *    On entry, call number in v0. The rest is like a normal function
  *    call: four args in a0-a3, the other args on the stack.

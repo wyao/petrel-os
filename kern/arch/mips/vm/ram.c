@@ -46,7 +46,7 @@ void
 ram_bootstrap(void)
 {
 	size_t ramsize;
-	
+
 	/* Get size of RAM. */
 	ramsize = mainbus_ramsize();
 

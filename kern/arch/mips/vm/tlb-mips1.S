@@ -188,5 +188,5 @@ tlb_reset:
    bne t0, 0x4000, 1b		/* if it's not the last tlb index, loop */
    tlbwi			/* write tlb entry (in delay slot) */
    j ra				/* done */
-   nop				/* delay slot */	
+   nop				/* delay slot */
    .end tlb_reset

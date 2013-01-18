@@ -74,7 +74,7 @@ main(int argc, char *argv[])
 			err(1, "%s: write", filename);
 		}
 		i += len;
-	}	
+	}
 
 	close(fileid);
 

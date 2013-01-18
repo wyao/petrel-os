@@ -115,7 +115,7 @@ dowait(int pid)
 }
 
 /* ===================================================
-	
+
  */
 
 static
@@ -123,15 +123,15 @@ void
 big_file(int size)
 {
 	int i, j, fileid;
-	
+
 	printf("[BIGFILE] test starting :\n");
 	printf("\tCreating a file of size: %d\n", size);
-	
+
 	fileid = open(BIGFILE_NAME, O_WRONLY|O_CREAT|O_TRUNC, 0664);
 	if (fileid < 0) {
 		err(1, "[BIGFILE]: %s: open for write", BIGFILE_NAME);
-	}	
-	
+	}
+
 	for(i = 0; i < BUFFER_SIZE; i++) {
 		fbuffer[i] = LETTER(i);
 	}
@@ -152,7 +152,7 @@ big_file(int size)
 	if (fileid < 0) {
 		err(1, "[BIGFILE]: %s: open for read", BIGFILE_NAME);
 	}
-	
+
 	for (i = 0; i < size; i += BUFFER_SIZE) {
 		j = read(fileid, fbuffer, BUFFER_SIZE);
 		if (j<0) {
@@ -231,12 +231,12 @@ concur(void)
 	if (remove(FNAME)) {
 		err(1, "[CONCUR]: %s: remove", FNAME);
 	}
-	
+
 	printf("[CONCUR] Done!\n");
 }
 
 /* ===================================================
-	
+
  */
 
 static
@@ -252,7 +252,7 @@ dir_test(int depth)
 
 	for (i = 0; i < depth; i++) {
 		strcat(dirname, tmp);
-		
+
 		printf("\tCreating dir : %s\n", dirname);
 
 		if (mkdir(dirname, 0775) < 0) {
@@ -276,7 +276,7 @@ dir_test(int depth)
 		strcat(dirname, fmp);
 
 		printf("\tDeleting file: %s\n", dirname);
-		
+
 		if (remove(dirname)) {
 			 err(1, "[DIRTEST]: %s: remove", dirname);
 		}
@@ -323,21 +323,21 @@ main(int argc, char * argv[])
 	else {
 		tv = RUNTHEMALL;
 	}
-	
+
 	if (tv & RUNBIGFILE) {
 		printf("[BIGFILE] : Run #1\n");
 		big_file(BIGFILE_SIZE);
 		printf("[BIGFILE] : Run #2\n");
 		big_file(BIGFILE_SIZE);
 	}
-	
+
 	if (tv & RUNDIRTEST) {
 		printf("[DIRTEST] : Run #1\n");
 		dir_test(DIR_DEPTH);
 		printf("[DIRTEST] : Run #2\n");
 		dir_test(DIR_DEPTH);
 	}
-	
+
 	if (tv & RUNCONCUR) {
 		printf("[CONCUR]\n");
 		concur();

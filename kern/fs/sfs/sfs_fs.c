@@ -78,7 +78,7 @@ sfs_mapio(struct sfs_fs *sfs, enum uio_rw rw)
 
 	/* Pointer to our bitmap data in memory. */
 	bitdata = bitmap_getdata(sfs->sfs_freemap);
-	
+
 	/* For each sector in the bitmap... */
 	for (j=0; j<mapsize; j++) {
 
@@ -210,7 +210,7 @@ sfs_unmount(struct fs *fs)
 	struct sfs_fs *sfs = fs->fs_data;
 
 	vfs_biglock_acquire();
-	
+
 	/* Do we have any files open? If so, can't unmount. */
 	if (vnodearray_num(sfs->sfs_vnodes) > 0) {
 		vfs_biglock_release();
@@ -224,7 +224,7 @@ sfs_unmount(struct fs *fs)
 	/* Once we start nuking stuff we can't fail. */
 	vnodearray_destroy(sfs->sfs_vnodes);
 	bitmap_destroy(sfs->sfs_freemap);
-	
+
 	/* The vfs layer takes care of the device for us */
 	(void)sfs->sfs_device;
 
@@ -321,7 +321,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		vfs_biglock_release();
 		return EINVAL;
 	}
-	
+
 	if (sfs->sfs_super.sp_nblocks > dev->d_blocks) {
 		kprintf("sfs: warning - fs has %u blocks, device has %u\n",
 			sfs->sfs_super.sp_nblocks, dev->d_blocks);

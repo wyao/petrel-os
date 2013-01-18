@@ -429,7 +429,7 @@ __pf_printnum(PF *pf)
 		 * part of xnum.
 		 */
 		*x = digits[xnum % pf->base];
-		
+
 		/*
 		 * Back up the pointer to point to the next space to the left.
 		 */

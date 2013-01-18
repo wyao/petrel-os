@@ -174,7 +174,7 @@ int
 main()
 {
 	char *start, *end;
-	
+
 	printf("Welcome to the palindrome tester!\n");
 	printf("I will take a large palindrome and test it.\n");
 	printf("Here it is:\n");
@@ -192,7 +192,7 @@ main()
 			return 0;
 		}
 	}
-	
+
 	printf("IS a palindrome\n");
 	return 0;
 }

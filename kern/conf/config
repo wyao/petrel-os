@@ -962,7 +962,7 @@ awk < $CONFTMP.attach '
     function genprobe(dev, devunit, bus, busunit) {
 
 	tryfunc = sprintf("tryattach_%s_to_%s", dev, bus);
-	
+
 	if (busunit!="*") {
 	    printf "\tif (busunit==%d) {\n", busunit;
 	}

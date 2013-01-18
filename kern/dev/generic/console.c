@@ -192,7 +192,7 @@ con_input(void *vcs, int ch)
 
 	cs->cs_gotchars[cs->cs_gotchars_head] = ch;
 	cs->cs_gotchars_head = nexthead;
-		
+
 	V(cs->cs_rsem);
 }
 

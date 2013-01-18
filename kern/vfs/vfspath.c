@@ -67,7 +67,7 @@ vfs_open(char *path, int openflags, mode_t mode, struct vnode **ret)
 		char name[NAME_MAX+1];
 		struct vnode *dir;
 		int excl = (openflags & O_EXCL)!=0;
-		
+
 		result = vfs_lookparent(path, &dir, name, sizeof(name));
 		if (result) {
 			return result;
@@ -94,7 +94,7 @@ vfs_open(char *path, int openflags, mode_t mode, struct vnode **ret)
 	}
 
 	VOP_INCOPEN(vn);
-	
+
 	if (openflags & O_TRUNC) {
 		if (canwrite==0) {
 			result = EINVAL;
@@ -143,7 +143,7 @@ vfs_remove(char *path)
 	struct vnode *dir;
 	char name[NAME_MAX+1];
 	int result;
-	
+
 	result = vfs_lookparent(path, &dir, name, sizeof(name));
 	if (result) {
 		return result;
@@ -164,7 +164,7 @@ vfs_rename(char *oldpath, char *newpath)
 	struct vnode *newdir;
 	char newname[NAME_MAX+1];
 	int result;
-	
+
 	result = vfs_lookparent(oldpath, &olddir, oldname, sizeof(oldname));
 	if (result) {
 		return result;

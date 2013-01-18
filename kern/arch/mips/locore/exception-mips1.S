@@ -101,7 +101,7 @@ mips_general_end:
    .text
    .type common_exception,@function
    .ent common_exception
-common_exception:	
+common_exception:
    mfc0 k0, c0_status		/* Get status register */
    andi k0, k0, CST_KUp		/* Check the we-were-in-user-mode bit */
    beq	k0, $0, 1f		/* If clear, from kernel, already have stack */

@@ -140,7 +140,7 @@ load_segment(struct vnode *v, off_t offset, vaddr_t vaddr,
 		}
 	}
 #endif
-	
+
 	return result;
 }
 

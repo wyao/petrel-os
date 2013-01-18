@@ -63,9 +63,9 @@ main(int argc, char *argv[])
 	if (argc != 2) {
 		errx(1, "Usage: hash filename");
 	}
-	
+
 	fd = open(argv[1], O_RDONLY, 0664);
-	
+
 	if (fd<0) {
 		err(1, "%s", argv[1]);
 	}
@@ -76,7 +76,7 @@ main(int argc, char *argv[])
 	}
 
 	close(fd);
-	
+
 	printf("Hash : %d\n", j);
 
 	return 0;

@@ -242,7 +242,7 @@ cvtestthread(void *junk, unsigned long num)
 				secs2--;
 				nsecs2 += 1000000000;
 			}
-			
+
 			nsecs2 -= nsecs1;
 			secs2 -= secs1;
 

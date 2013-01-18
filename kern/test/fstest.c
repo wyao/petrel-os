@@ -125,7 +125,7 @@ fstest_remove(const char *fs, const char *namesuffix)
 		kprintf("Could not remove %s: %s\n", name, strerror(err));
 		return -1;
 	}
-	
+
 	return 0;
 }
 
@@ -282,7 +282,7 @@ dofstest(const char *filesys)
 		kprintf("*** Test failed\n");
 		return;
 	}
-	
+
 	if (fstest_read(filesys, "")) {
 		kprintf("*** Test failed\n");
 		return;
@@ -342,7 +342,7 @@ doreadstress(const char *filesys)
 		kprintf("*** Test failed\n");
 		return;
 	}
-	
+
 	kprintf("*** fs read stress test done\n");
 }
 
@@ -488,7 +488,7 @@ createstress_thread(void *fs, unsigned long num)
 			V(threadsem);
 			return;
 		}
-		
+
 		if (fstest_read(filesys, numstr)) {
 			kprintf("*** Thread %lu: file %d: failed\n", num, i);
 			V(threadsem);

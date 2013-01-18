@@ -655,7 +655,7 @@ check_inode_blocks(uint32_t ino, struct sfs_inode *sfi, int isdir)
 				badcount++;
 				bitmap_mark(sfi->sfi_direct[block],
 					    B_TOFREE, 0);
-			}			
+			}
 		}
 	}
 

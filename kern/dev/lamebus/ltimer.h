@@ -41,7 +41,7 @@ struct ltimer_softc {
 	/* Initialized by lower-level attach routine */
 	void *lt_bus;		/* bus we're on */
 	uint32_t lt_buspos;	/* position (slot) on that bus */
-	
+
 };
 
 /* Functions called by lower-level drivers */

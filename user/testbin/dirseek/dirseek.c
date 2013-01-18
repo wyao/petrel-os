@@ -162,7 +162,7 @@ readit(void)
 		}
 
 		testfiles[ix].pos = pos;
-		
+
 		pos = lseek(dirfd, 0, SEEK_CUR);
 		if (pos < 0) {
 			err(1, ".: lseek(0, SEEK_CUR)");
@@ -190,7 +190,7 @@ readit(void)
 		     n, i);
 	}
 }
-	
+
 static
 void
 firstread(void)
