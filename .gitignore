@@ -4,3 +4,4 @@ defs.mk
 kern/compile/ASST*
 *.swp
 .depend
+user/testbin/randcall/calls.c
