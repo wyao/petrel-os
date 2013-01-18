@@ -1,0 +1,6 @@
+build/*
+build
+defs.mk
+kern/compile/ASST*
+*.swp
+.depend
