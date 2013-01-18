@@ -51,7 +51,7 @@
 #       where the % is either a number or a star, which is treated as
 #       a wildcard. The first line enables a device foo that is not
 #       supposed to be "attached" to anything. The second line enables
-#       a device foo that is attached to a device bar. For more 
+#       a device foo that is attached to a device bar. For more
 #       information about what this means, see below.
 #
 #
@@ -61,7 +61,7 @@
 #
 # Note: All source file names are relative to the top directory of the
 # kernel source, that is, src/kern.
-# 
+#
 # The syntax for adding a regular source file is:
 #
 #    [machine M | platform P] file sourcefile.c
@@ -103,7 +103,7 @@
 #           option - if you don't, cpp will silently assume it is 0,
 #           which can be quite frustrating.
 #
-#       The defoption must be seen before any optional file 
+#       The defoption must be seen before any optional file
 #       declarations that use it.
 #
 #
@@ -144,12 +144,12 @@
 #
 #       are called from autoconf.c to create instances as requested.
 #       These calls are made from the function pseudoconfig(), which
-#       should be called from dev/init.c after hardware device 
+#       should be called from dev/init.c after hardware device
 #       initialization completes. The pseudoattach functions should
 #       perform all setup and initialization necessary. (No
 #       config_devname function will be called.)
 #
-#       Devices with attachments are automatically probed and 
+#       Devices with attachments are automatically probed and
 #       configured from code in autoconf.c. This file is generated
 #       by the config script. It contains functions called
 #       "autoconf_devname", for each device. These functions call
@@ -207,8 +207,8 @@
 #       occur more or less in the order things appear in the config,
 #       as constrained by the tree structure of the available devices.
 #
-#       Note that OS/161 does not make extensive use of this 
-#       functionality, and the device driver architecture outlined 
+#       Note that OS/161 does not make extensive use of this
+#       functionality, and the device driver architecture outlined
 #       here is overkill for such a limited environment as System/161.
 #       However, it's similar to the way real systems are organized.
 #
@@ -239,7 +239,7 @@
 # These come before the archinclude so that the hardware device
 # definitions, which are included from there, can define attachments
 # for them.
-# 
+#
 
 defdevice       beep			dev/generic/beep.c
 defdevice	con			dev/generic/console.c
@@ -253,14 +253,14 @@ defdevice       random                  dev/generic/random.c
 ########################################
 
 #
-# Get the definitions for each machine and platform supported. The 
+# Get the definitions for each machine and platform supported. The
 # ones used will be selected by make at compile time based on the
 # contents of the top-level defs.mk file.
 #
 # This will declare a bunch of machine-dependent source files and also
 # declare all the hardware devices (since what sorts of hardware we
 # expect to find is machine-dependent.)
-# 
+#
 
 include   arch/mips/conf/conf.arch
 include   arch/sys161/conf/conf.arch
@@ -273,7 +273,7 @@ include   arch/sys161/conf/conf.arch
 
 #
 # Kernel utility code
-# 
+#
 
 file      lib/array.c
 file      lib/bitmap.c
@@ -288,7 +288,7 @@ defoption noasserts
 
 #
 # Standard C functions
-# 
+#
 # For most of these, we take the source files from our libc.  Note
 # that those files have to have been hacked a bit to support this.
 #

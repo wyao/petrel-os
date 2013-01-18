@@ -279,7 +279,7 @@ OS/161 1.x change log:
 20010918 dholland	Panic handling improvements.
 20010918 dholland	Kernel bootup and shutdown cleanup.
 20010918 dholland	Fixes for testbin/badcall.
-20010824 dholland	Make config script probe for <err.h>. 
+20010824 dholland	Make config script probe for <err.h>.
 20010821 dholland	Changes to queue code for consistent naming.
 20010808 dholland	Add man pages.
 20010808 dholland	The shell can now use <err.h> again, so do so.

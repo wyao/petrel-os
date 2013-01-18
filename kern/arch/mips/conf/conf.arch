@@ -75,4 +75,4 @@ machine mips optfile dumbvm    arch/mips/vm/dumbvm.c
 #
 # System call layer
 #
-machine mips file    arch/mips/syscall/syscall.c	# System call handler 
+machine mips file    arch/mips/syscall/syscall.c	# System call handler
