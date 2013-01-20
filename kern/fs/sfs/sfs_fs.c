@@ -128,18 +128,18 @@ sfs_sync(struct fs *fs)
 	 * The following diagram may help:
 	 *
 	 *     struct sfs_fs        <-------------\
-         *           :                            |
-         *           :   sfs_absfs (struct fs)    |   <------\
-         *           :      :                     |          |
-         *           :      :  various members    |          |
-         *           :      :                     |          |
-         *           :      :  fs_data  ----------/          |
-         *           :      :                             ...|...
-         *           :                                   .  VFS  .
-         *           :                                   . layer .
-         *           :   other members                    .......
-         *           :
-         *           :
+     *           :                            |
+     *           :   sfs_absfs (struct fs)    |   <------\
+     *           :      :                     |          |
+     *           :      :  various members    |          |
+     *           :      :                     |          |
+     *           :      :  fs_data  ----------/          |
+     *           :      :                             ...|...
+     *           :                                   .  VFS  .
+     *           :                                   . layer .
+     *           :   other members                    .......
+     *           :
+     *           :
 	 *
 	 * This construct is repeated with vnodes and devices and other
 	 * similar things all over the place in OS/161, so taking the
