@@ -1,0 +1,73 @@
+Discuss Me! Question 1 In section 3.1 of the text, you are introduced to the mechanisms used to transfer control between user processes and the operating system. For each of trap and interrupt, tell us where we can find the first line of OS/161 code that is executed when it occurs. Then tell us where control gets transferred to from that point.
+
+
+
+
+Discuss Me! Question 2 A system call, such as write, ultimately leads to a trap. Find where in OS/161 this trap is invoked.
+
+
+
+
+Discuss Me! Question 3 Why do you suppose there are libc functions in the source tree (common/libc)?
+
+
+
+
+Question 4: From what directory should you run configure again? What should you do immediately after running configure?
+
+Configure should be run with the top of the OS/161 tree as its current directory. After running configure, build and install the user level utilities with "bmake" followed by "bmake install".
+
+
+Discuss Me! Question 5: What are some of the details which would make a function "machine dependent"? Why might it be important to maintain this separation, instead of just putting all of the code in one function?
+
+Some functions perform actions that are so low level that the implmentation would depend on the specific architecture of the hardware. Such actions may include low level system startup actions, trap and fault handling, and run-time support for I/O devices. By maintaining this separation, we allow machine-independent code to be reused by simply making use of the machine-sepcifc constants and functions.
+
+
+Question 6:How large is a trapframe? Why?
+
+A trapframe is 37 * uint32_t (148 bytes) to capture MIPS's 31 registers (not counting the $zero register), MIPS's 2 special $lo and $hi registers, and the coprosessor's vaddr, status, cause, and epc registers.
+
+
+Question 7: Under what circumstances should you re-run the kern/conf/config script?
+
+Re-run the kern/conf/config script when changing assignments or to config builds with optimization for performance testing.
+
+
+Question 8: Under what circumstances should you run bmake depend in kern/compile/ASST<n>?
+
+Run bmake depend in kern/compile/ASST<n> loads the dependencies for the macros, so it should be done when we start a new assignment
+
+
+Question 9: Under what circumstances should you run bmake or bmake install in kern/compile/ASST<n>?
+
+Run bmake or bmake install every time we wish to recompile/install our kernal.
+
+
+Question 10: Describe the steps you need to take to add a new system call.
+
+
+
+
+Question 11: When you booted your kernel, you found that there were several commands that you could issue to experiment with it. Explain exactly where and what you would have to do to add a command that printed out, "Hello world!"
+
+
+
+
+Question 12: Why do we need to include these in your OS/161 distribution? Why can't you just use the standard utilities that are present on the machine on which you're working?
+
+
+
+
+Question 13: When a user program exits, where is the return value of the program left?
+
+
+
+
+Discuss Me! Question 14: Imagine that you wanted to add a new system call. List all the places that you would need to modify/add code. Then list the commands necessary to rebuild your kernel.
+
+
+
+
+Discuss Me! Question 15: Refer to the document Using GDB and run gdb on your kernel. Experiment a bit and follow the execution from the start.S file through the main menu kmain and then to the code that executes some of the commands. Explain the control flow from start.S through the menu and on to other parts of the kernel.
+
+
