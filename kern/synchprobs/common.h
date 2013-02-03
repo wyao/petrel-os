@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+ * Copyright (c) 2013
  *	The President and Fellows of Harvard College.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,58 +26,26 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#ifndef __SYNCH_PROB_COMMON_H__
+#define __SYNCH_PROB_COMMON_H__
 
-#ifndef _TEST_H_
-#define _TEST_H_
-
-/*
- * Declarations for test code and other miscellaneous high-level
- * functions.
+/**
+ * Synch problem common code and constants.
  */
 
+struct thread;
 
-/* These are only actually available if OPT_SYNCHPROBS is set. */
-int whalemating(int, char **);
-int fellowship(int, char **);
+void thread_fork_or_panic(const char *, void (*)(void *, unsigned long),
+	    void *, unsigned long, struct thread **);
 
-/*
- * Test code.
- */
+#define NFOTRS            10
+#define HOBBITS_PER_FOTR  4
+#define MEN_PER_FOTR      2
 
-/* lib tests */
-int arraytest(int, char **);
-int bitmaptest(int, char **);
-int queuetest(int, char **);
+extern const char *hobbitses[NFOTRS * HOBBITS_PER_FOTR];
+extern const char *eldar[NFOTRS];
+extern const char *khazad[NFOTRS];
+extern const char *istari[NFOTRS];
+extern const char *menfolk[NFOTRS * MEN_PER_FOTR];
 
-/* thread tests */
-int threadtest(int, char **);
-int threadtest2(int, char **);
-int threadtest3(int, char **);
-int semtest(int, char **);
-int locktest(int, char **);
-int cvtest(int, char **);
-
-/* filesystem tests */
-int fstest(int, char **);
-int readstress(int, char **);
-int writestress(int, char **);
-int writestress2(int, char **);
-int createstress(int, char **);
-int printfile(int, char **);
-
-/* other tests */
-int malloctest(int, char **);
-int mallocstress(int, char **);
-int nettest(int, char **);
-
-/* Routine for running a user-level program. */
-int runprogram(char *progname);
-
-/* Kernel menu system. */
-void menu(char *argstr);
-
-/* The main function, called from start.S. */
-void kmain(char *bootstring);
-
-
-#endif /* _TEST_H_ */
+#endif /* __SYNCH_PROB_COMMON_H__ */

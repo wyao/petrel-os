@@ -479,6 +479,7 @@ static const char *mainmenu[] = {
 	"[?t] Tests menu                     ",
 #if OPT_SYNCHPROBS
 	"[sp1] Whale Mating                  ",
+	"[fotr] Fellowship of the Ring       ",
 #if 0
 	"[sp2] Cat/mouse                     ",
 	"[sp3] Stoplight                     ",
@@ -533,10 +534,7 @@ static struct {
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
 	{ "sp1",	whalemating },
-#if 0
-	{ "sp2",	catmouse },
-	{ "sp3",	stoplight },
-#endif
+  { "fotr", fellowship },
 #endif
 
 	/* stats */
