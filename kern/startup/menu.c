@@ -480,10 +480,7 @@ static const char *mainmenu[] = {
 #if OPT_SYNCHPROBS
 	"[sp1] Whale Mating                  ",
 	"[fotr] Fellowship of the Ring       ",
-#if 0
-	"[sp2] Cat/mouse                     ",
-	"[sp3] Stoplight                     ",
-#endif
+	"[pz] Piazza                         ",
 #endif
 	"[kh] Kernel heap stats              ",
 	"[q] Quit and shut down              ",
@@ -535,6 +532,7 @@ static struct {
 	/* in-kernel synchronization problem(s) */
 	{ "sp1",	whalemating },
   { "fotr", fellowship },
+  { "pz",   piazza },
 #endif
 
 	/* stats */

@@ -48,4 +48,9 @@ extern const char *khazad[NFOTRS];
 extern const char *istari[NFOTRS];
 extern const char *menfolk[NFOTRS * MEN_PER_FOTR];
 
+#define NINSTRUCTORS  5
+#define NSTUDENTS     50
+#define NANSWERS      40
+#define NCYCLES       100
+
 #endif /* __SYNCH_PROB_COMMON_H__ */
