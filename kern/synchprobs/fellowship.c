@@ -46,17 +46,13 @@
 //  Your solution should print NFOTRS full fellowships to stdout, each on a
 //  separate line.  Each such fellowship should have the form:
 //
-//    n: wizard, man, man, elf, dwarf, hobbit, hobbit, hobbit, hobbit
+//    FELLOWSHIP: wizard, man, man, elf, dwarf, hobbit, hobbit, hobbit, hobbit
 //
 //  where each member of each race is identified by name using these helper
-//  routines (e.g., nameof_istari()), and `n' is some unique identifier for the
-//  fellowship.  The threads can exit once the full fellowship is printed, and
-//  should individually print out
+//  routines (e.g., nameof_istari()). The threads can exit once the full
+//  fellowship is printed, and should also print out their names as they do so:
 //
-//    name: n
-//
-//  where `name' is its name, and `n' is the identifier of the fellowship it
-//  joined.
+//    LEAVING: name
 //
 
 #define NAMEOF_FUNC(race)   \
