@@ -201,17 +201,17 @@ any_badbuf(struct buftest *info)
 ////////////////////////////////////////////////////////////
 
 #define T(call) \
-  void					\
-  test_##call##_buf(void)		\
-  {					\
-  	static struct buftest info = {	\
-  		call##_setup,		\
-  		call##_badbuf,		\
-  		call##_cleanup,		\
-  		#call,			\
-	};				\
-   	any_badbuf(&info);		\
-  }
+	void					\
+	test_##call##_buf(void)			\
+	{					\
+		static struct buftest info = {	\
+			call##_setup,		\
+			call##_badbuf,		\
+			call##_cleanup,		\
+			#call,			\
+		};				\
+		any_badbuf(&info);		\
+	}
 
 T(read);
 T(write);

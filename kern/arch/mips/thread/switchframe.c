@@ -59,40 +59,40 @@ switchframe_init(struct thread *thread,
 	vaddr_t stacktop;
 	struct switchframe *sf;
 
-        /*
-         * MIPS stacks grow down. t_stack is just a hunk of memory, so
-         * get the other end of it. Then set up a switchframe on the
-         * top of the stack.
-         */
-        stacktop = ((vaddr_t)thread->t_stack) + STACK_SIZE;
-        sf = ((struct switchframe *) stacktop) - 1;
+	/*
+	 * MIPS stacks grow down. t_stack is just a hunk of memory, so
+	 * get the other end of it. Then set up a switchframe on the
+	 * top of the stack.
+	 */
+	stacktop = ((vaddr_t)thread->t_stack) + STACK_SIZE;
+	sf = ((struct switchframe *) stacktop) - 1;
 
-        /* Zero out the switchframe. */
-        bzero(sf, sizeof(*sf));
+	/* Zero out the switchframe. */
+	bzero(sf, sizeof(*sf));
 
-        /*
-         * Now set the important parts: pass through the three arguments,
-         * and set the return address register to the place we want
-         * execution to begin.
-         *
-         * Thus, when switchframe_switch does its "j ra", it will
-         * actually jump to mips_threadstart, which will move the
-         * arguments into the right register and jump to
-         * thread_startup().
-         *
-         * Note that this means that when we call switchframe_switch()
-         * in thread_switch(), we may not come back out the same way
-         * in the next thread. (Though we will come back out the same
-         * way when we later come back to the same thread again.)
-         *
-         * This has implications for code at the bottom of
-         * thread_switch, described in thread.c.
-         */
-        sf->sf_s0 = (uint32_t)entrypoint;
-        sf->sf_s1 = (uint32_t)data1;
-        sf->sf_s2 = (uint32_t)data2;
-        sf->sf_ra = (uint32_t)mips_threadstart;
+	/*
+	 * Now set the important parts: pass through the three arguments,
+	 * and set the return address register to the place we want
+	 * execution to begin.
+	 *
+	 * Thus, when switchframe_switch does its "j ra", it will
+	 * actually jump to mips_threadstart, which will move the
+	 * arguments into the right register and jump to
+	 * thread_startup().
+	 *
+	 * Note that this means that when we call switchframe_switch()
+	 * in thread_switch(), we may not come back out the same way
+	 * in the next thread. (Though we will come back out the same
+	 * way when we later come back to the same thread again.)
+	 *
+	 * This has implications for code at the bottom of
+	 * thread_switch, described in thread.c.
+	 */
+	sf->sf_s0 = (uint32_t)entrypoint;
+	sf->sf_s1 = (uint32_t)data1;
+	sf->sf_s2 = (uint32_t)data2;
+	sf->sf_ra = (uint32_t)mips_threadstart;
 
-        /* Set ->t_context, and we're done. */
+	/* Set ->t_context, and we're done. */
 	thread->t_context = sf;
 }

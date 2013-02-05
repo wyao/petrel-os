@@ -71,19 +71,19 @@
  */
 
 struct sockaddr {
-   __u8	sa_len;
-   __u8 sa_family;
+	__u8	sa_len;
+	__u8 sa_family;
 };
 
 #define _SS_SIZE	128
 struct sockaddr_storage {
-   __u8 ss_len;
-   __u8 ss_family;
-   __u8 __ss_pad1;
-   __u8 __ss_pad2;
-   __u32 __ss_pad3;
-   __u64 __ss_pad4;
-   char __ss_pad5[_SS_SIZE - sizeof(__u64) - sizeof(__u32) - 4*sizeof(__u8)];
+	__u8 ss_len;
+	__u8 ss_family;
+	__u8 __ss_pad1;
+	__u8 __ss_pad2;
+	__u32 __ss_pad3;
+	__u64 __ss_pad4;
+	char __ss_pad5[_SS_SIZE - sizeof(__u64) - sizeof(__u32) - 4*sizeof(__u8)];
 };
 
 
