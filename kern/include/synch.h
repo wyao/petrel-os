@@ -34,7 +34,6 @@
  * Header file for synchronization primitives.
  */
 
-
 #include <spinlock.h>
 
 /*
@@ -79,7 +78,7 @@ struct lock {
 };
 
 struct lock *lock_create(const char *name);
-void lock_acquire(struct lock *);
+void lock_release(struct lock *);
 
 /*
  * Operations:
@@ -92,7 +91,7 @@ void lock_acquire(struct lock *);
  *
  * These operations must be atomic. You get to write them.
  */
-void lock_release(struct lock *);
+void lock_acquire(struct lock *);
 bool lock_do_i_hold(struct lock *);
 void lock_destroy(struct lock *);
 
