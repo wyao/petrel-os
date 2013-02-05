@@ -1,27 +1,16 @@
 Discuss Me! Question 1 In section 3.1 of the text, you are introduced to the mechanisms used to transfer control between user processes and the operating system. For each of trap and interrupt, tell us where we can find the first line of OS/161 code that is executed when it occurs. Then tell us where control gets transferred to from that point.
 
-kern/arch/mips/locore/exception-mips1.S (the entry point for exceptions) calls mips_trap
-kern/arch/mips/locore/trap.c calls the syscall handler
-kerb/ arch/mips/syscall/syscall.c
+    The entry point for exception on the OS161 system code side is the mips_general_handler label in kern/arch/mips/locore/exception-mips1.S which ultimately calls the mips_trap function in kern/arch/mips/locore/trap.c. mips_trap() then extract the exception code info from the register fields and calls the respective interrupt or syscall handler. The syscall handler resides in kern/arch/mips/syscall/syscall.c and handels the various system calls via a switch statement.
 
 
 Discuss Me! Question 2 A system call, such as write, ultimately leads to a trap. Find where in OS/161 this trap is invoked.
 
-Start.S installs handler into that memory location. Whenever syscall happens, that trap handler in the memory gets involked.
+    A system call invokes a trap in build/user/lib/libc/syscall.S. Note that user/lib/libc/syscalls/gensyscalls.sh parses the kernel's kern/include/syscalls.h (where Prototypes for IN-KERNEL entry points for system call implementations are) into the body of syscalls.S by copying from user/lib/libc/arch/mips/syscalls-mips.S. syscall.S loads the syscall number into v0, the register that the kernel expects to find it in, and jumps to the shared syscall code and generates the exception. The handler for these exceptions was loaded by start.S into memory on startup.
 
-Kernel involks the handler. Start.S.
-
-user/lib/libc/syscalls/gensyscalls.sh
-Parses the kernel's syscalls.h (where Prototypes for IN-KERNEL entry points for system call implementations are) into the body of syscalls.S 
-
-
-       user/lib/libc/arch/mips/syscalls-mips.S load the syscall number into v0, the register the kernel expects to find it in, and jump to the shared syscall code.
-
-where does exception get generated? in build/user/lib/libc/syscalls.S
 
 Discuss Me! Question 3 Why do you suppose there are libc functions in the source tree (common/libc)?
 
-
+    There are libc functions in the source tree so that in building our kernel, we have access to common libc functions like strcpy, strlen, and printf that we otherwise wouldn't have access to.
 
 
 Question 4: From what directory should you run configure again? What should you do immediately after running configure?
@@ -78,7 +67,7 @@ Question 12: Why do we need to include these in your OS/161 distribution? Why ca
 
 Question 13: When a user program exits, where is the return value of the program left?
 
-    Registers  s0 and a0.
+    Registers s0 and a0.
 
 
 Discuss Me! Question 14: Imagine that you wanted to add a new system call. List all the places that you would need to modify/add code. Then list the commands necessary to rebuild your kernel.
