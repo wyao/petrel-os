@@ -1,12 +1,23 @@
 Discuss Me! Question 1 In section 3.1 of the text, you are introduced to the mechanisms used to transfer control between user processes and the operating system. For each of trap and interrupt, tell us where we can find the first line of OS/161 code that is executed when it occurs. Then tell us where control gets transferred to from that point.
 
-
+kern/arch/mips/locore/exception-mips1.S (the entry point for exceptions) calls mips_trap
+kern/arch/mips/locore/trap.c calls the syscall handler
+kerb/ arch/mips/syscall/syscall.c
 
 
 Discuss Me! Question 2 A system call, such as write, ultimately leads to a trap. Find where in OS/161 this trap is invoked.
 
+Start.S installs handler into that memory location. Whenever syscall happens, that trap handler in the memory gets involked.
+
+Kernel involks the handler. Start.S.
+
+user/lib/libc/syscalls/gensyscalls.sh
+Parses the kernel's syscalls.h (where Prototypes for IN-KERNEL entry points for system call implementations are) into the body of syscalls.S 
 
 
+       user/lib/libc/arch/mips/syscalls-mips.S load the syscall number into v0, the register the kernel expects to find it in, and jump to the shared syscall code.
+
+where does exception get generated? in build/user/lib/libc/syscalls.S
 
 Discuss Me! Question 3 Why do you suppose there are libc functions in the source tree (common/libc)?
 
@@ -15,7 +26,7 @@ Discuss Me! Question 3 Why do you suppose there are libc functions in the source
 
 Question 4: From what directory should you run configure again? What should you do immediately after running configure?
 
-    Configure should be run with the top of the OS/161 tree as its current directory. After running configure, build and install the user level utilities with "bmake" followed by "bmake install".
+    Configure should be run in the assignment directory. After running configure, build and install the user level utilities with "bmake" followed by "bmake install".
 
 
 Discuss Me! Question 5: What are some of the details which would make a function "machine dependent"? Why might it be important to maintain this separation, instead of just putting all of the code in one function?
