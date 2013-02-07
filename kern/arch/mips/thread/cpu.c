@@ -136,11 +136,11 @@ cpu_identify(void)
 void
 cpu_irqon(void)
 {
-        uint32_t x;
+	uint32_t x;
 
-        GET_STATUS(x);
-        x |= CST_IEc;
-        SET_STATUS(x);
+	GET_STATUS(x);
+	x |= CST_IEc;
+	SET_STATUS(x);
 }
 
 /*
@@ -149,11 +149,11 @@ cpu_irqon(void)
 void
 cpu_irqoff(void)
 {
-        uint32_t x;
+	uint32_t x;
 
-        GET_STATUS(x);
-        x &= ~(uint32_t)CST_IEc;
-        SET_STATUS(x);
+	GET_STATUS(x);
+	x &= ~(uint32_t)CST_IEc;
+	SET_STATUS(x);
 }
 
 /*
@@ -163,14 +163,14 @@ static
 void
 cpu_irqonoff(void)
 {
-        uint32_t x, xon, xoff;
+	uint32_t x, xon, xoff;
 
-        GET_STATUS(x);
-        xon = x | CST_IEc;
-        xoff = x & ~(uint32_t)CST_IEc;
-        SET_STATUS(xon);
+	GET_STATUS(x);
+	xon = x | CST_IEc;
+	xoff = x & ~(uint32_t)CST_IEc;
+	SET_STATUS(xon);
 	__asm volatile("nop; nop; nop; nop");
-        SET_STATUS(xoff);
+	SET_STATUS(xoff);
 }
 
 ////////////////////////////////////////////////////////////
@@ -210,7 +210,7 @@ wait(void)
 		".set volatile;"	/* avoid unwanted optimization */
 		"wait;"			/* suspend until interrupted */
 		".set pop"		/* restore assembler mode */
-	      );
+	);
 }
 
 /*
@@ -220,7 +220,7 @@ void
 cpu_idle(void)
 {
 	wait();
-        cpu_irqonoff();
+	cpu_irqonoff();
 }
 
 /*
@@ -229,8 +229,8 @@ cpu_idle(void)
 void
 cpu_halt(void)
 {
-        cpu_irqoff();
-        while (1) {
+	cpu_irqoff();
+	while (1) {
 		wait();
-        }
+	}
 }

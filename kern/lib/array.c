@@ -112,12 +112,12 @@ array_setsize(struct array *a, unsigned num)
 void
 array_remove(struct array *a, unsigned index)
 {
-        unsigned num_to_move;
+	unsigned num_to_move;
 
-        ARRAYASSERT(a->num <= a->max);
-        ARRAYASSERT(index < a->num);
+	ARRAYASSERT(a->num <= a->max);
+	ARRAYASSERT(index < a->num);
 
-        num_to_move = a->num - (index + 1);
-        memmove(a->v + index, a->v + index+1, num_to_move*sizeof(void *));
-        a->num--;
+	num_to_move = a->num - (index + 1);
+	memmove(a->v + index, a->v + index+1, num_to_move*sizeof(void *));
+	a->num--;
 }

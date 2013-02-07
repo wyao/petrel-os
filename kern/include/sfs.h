@@ -77,7 +77,7 @@ int sfs_mount(const char *device);
 
 /* Initialize uio structure */
 #define SFSUIO(iov, uio, ptr, block, rw) \
-    uio_kinit(iov, uio, ptr, SFS_BLOCKSIZE, ((off_t)(block))*SFS_BLOCKSIZE, rw)
+	uio_kinit(iov, uio, ptr, SFS_BLOCKSIZE, ((off_t)(block))*SFS_BLOCKSIZE, rw)
 
 /* Convenience functions for block I/O */
 int sfs_rwblock(struct sfs_fs *sfs, struct uio *uio);

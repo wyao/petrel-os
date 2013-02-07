@@ -408,7 +408,10 @@ defoption netfs
 ########################################
 
 defoption synchprobs
+optfile   synchprobs  synchprobs/common.c
 optfile   synchprobs  synchprobs/whalemating.c
+optfile   synchprobs  synchprobs/fellowship.c
+optfile   synchprobs  synchprobs/piazza.c
 
 
 ########################################

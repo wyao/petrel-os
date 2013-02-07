@@ -36,8 +36,10 @@
  */
 
 
-/* This is only actually available if OPT_SYNCHPROBS is set. */
+/* These are only actually available if OPT_SYNCHPROBS is set. */
 int whalemating(int, char **);
+int fellowship(int, char **);
+int piazza(int, char **);
 
 /*
  * Test code.

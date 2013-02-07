@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+ * Copyright (c) 2013
  *	The President and Fellows of Harvard College.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,43 +26,31 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
+#ifndef __SYNCH_PROB_COMMON_H__
+#define __SYNCH_PROB_COMMON_H__
 
-#ifndef _KERN_IOVEC_H_
-#define _KERN_IOVEC_H_
-
-/*
- * iovec structure, used in the readv/writev scatter/gather I/O calls,
- * and within the kernel for keeping track of blocks of data for I/O.
+/**
+ * Synch problem common code and constants.
  */
 
-struct iovec {
-	/*
-	 * For maximum type safety, when in the kernel, distinguish
-	 * user pointers from kernel pointers.
-	 *
-	 * (A pointer is a user pointer if it *came* from userspace,
-	 * not necessarily if it *points* to userspace. If a system
-	 * call passes 0xdeadbeef, it points to the kernel, but it's
-	 * still a user pointer.)
-	 *
-	 * In userspace, there are only user pointers; also, the name
-	 * iov_base is defined by POSIX.
-	 *
-	 * Note that to work properly (without extra unwanted fiddling
-	 * around) this scheme requires that void* and userptr_t have
-	 * the same machine representation. This is theoretically
-	 * possible under the C standard, but such machines do not
-	 * exist in practice.
-	 */
-#ifdef _KERNEL
-	union {
-		userptr_t  iov_ubase;	/* user-supplied pointer */
-		void      *iov_kbase;	/* kernel-supplied pointer */
-	};
-#else
-	void *iov_base;			/* user-supplied pointer */
-#endif
-	size_t iov_len;			/* Length of data */
-};
+struct thread;
 
-#endif /* _KERN_IOVEC_H_ */
+void thread_fork_or_panic(const char *, void (*)(void *, unsigned long),
+	    void *, unsigned long, struct thread **);
+
+#define NFOTRS            10
+#define HOBBITS_PER_FOTR  4
+#define MEN_PER_FOTR      2
+
+extern const char *hobbitses[NFOTRS * HOBBITS_PER_FOTR];
+extern const char *eldar[NFOTRS];
+extern const char *khazad[NFOTRS];
+extern const char *istari[NFOTRS];
+extern const char *menfolk[NFOTRS * MEN_PER_FOTR];
+
+#define NINSTRUCTORS  5
+#define NSTUDENTS     50
+#define NANSWERS      40
+#define NCYCLES       100
+
+#endif /* __SYNCH_PROB_COMMON_H__ */

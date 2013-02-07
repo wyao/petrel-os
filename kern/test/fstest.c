@@ -556,18 +556,18 @@ checkfilesystem(int nargs, char **args)
 	return 0;
 }
 
-#define DEFTEST(testname)                         \
-  int                                             \
-  testname(int nargs, char **args)                \
-  {                                               \
-	int result;                               \
-	result = checkfilesystem(nargs, args);    \
-	if (result) {                             \
-		return result;                    \
-	}                                         \
-	do##testname(args[1]);                    \
-	return 0;                                 \
-  }
+#define DEFTEST(testname)						\
+	int								\
+	testname(int nargs, char **args)				\
+	{								\
+		int result;						\
+		result = checkfilesystem(nargs, args);			\
+		if (result) {						\
+			return result;					\
+		}							\
+		do##testname(args[1]);					\
+		return 0;						\
+	}
 
 DEFTEST(fstest);
 DEFTEST(readstress);

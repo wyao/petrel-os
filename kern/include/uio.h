@@ -41,15 +41,15 @@
 
 /* Direction. */
 enum uio_rw {
-        UIO_READ,			/* From kernel to uio_seg */
-        UIO_WRITE,			/* From uio_seg to kernel */
+	UIO_READ,			/* From kernel to uio_seg */
+	UIO_WRITE,			/* From uio_seg to kernel */
 };
 
 /* Source/destination. */
 enum uio_seg {
-        UIO_USERISPACE,			/* User process code. */
-        UIO_USERSPACE,			/* User process data. */
-        UIO_SYSSPACE,			/* Kernel. */
+	UIO_USERISPACE,			/* User process code. */
+	UIO_USERSPACE,			/* User process data. */
+	UIO_SYSSPACE,			/* Kernel. */
 };
 
 struct uio {
