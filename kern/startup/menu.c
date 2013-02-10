@@ -562,6 +562,9 @@ static struct {
 	{ "fs4",	writestress2 },
 	{ "fs5",	createstress },
 
+	/* unittests */
+	{ "ut1", 	lock_unittest },
+
 	{ NULL, NULL }
 };
 

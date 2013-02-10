@@ -220,6 +220,16 @@ locktest(int nargs, char **args)
 	return 0;
 }
 
+int lock_unittest(int nargs, char **args){
+	(void)nargs;
+	(void)args;
+
+	KASSERT(1==1);
+	kprintf("Assert Pass\n");
+
+	return 0;
+}
+
 static
 void
 cvtestthread(void *junk, unsigned long num)
