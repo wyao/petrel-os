@@ -1,0 +1,41 @@
+Thread Questions
+
+1. What happens to a thread when it exits (i.e., calls thread_exit())? What about when it sleeps?
+    Decrease the reference pointer to the current working directory that the thread is on. Destroy the address space of the thread. Check the stack guard band. Mark the thread as a zombie.
+
+2. What function(s) handle(s) a context switch?
+    thread_switch() performs a context switch with help of switchframe_switch().
+
+3. What does it mean for a thread to be in each of the possible thread states?
+    - Running: Running.
+    - Ready: Runnable, but not currently running (likely because it is new or was yielded to another process).
+    - Sleeping: Sleeping.
+    - Zombie: Thread exited but not yet deleted.
+
+4. What does it mean to turn interrupts off? How is this accomplished? Why is it important to turn off interrupts in the thread subsystem code?
+    It means that no other thread can hijack the cpu/replace the current thread through a context switch. This is done by setting the SPL to high using splhigh(). We turn interrupts off in thread subsystem code so that context switches can complete properly or threads can properly exit.
+
+5. What happens when a thread wakes up another thread? How does a sleeping thread get to run again?
+    A thread wakes up another thread by calling threadlist_remhead() to grab the next thread on the waiting channel and makes it ready/runnable. Then that thread is added  to the CPU's run queue and waits for a context switch.
+
+
+Scheduler Questions
+
+1. What function(s) choose(s) the next thread to run?
+    - thread_switch() swaps in the next thread on the CPU's run queue
+    - schedule() reshuffles the threads around on the run queue
+    - thread_consider_migration() migrates threads across CPUs' run queues in case on imbalance
+
+2. How does it (do they) pick the next thread?
+    thread_switch() simply picks the next thread on the run queue. We are responsible for implementing schedule().
+
+3. What role does the hardware timer play in scheduling? What hardware independent function is called on a timer interrupt?
+    hardclock() calls both schedule() and thread_consider_migration() periodically.
+
+Synchronization Questions
+
+1. Describe how wchan_sleep() and wchan_wakeone() are used to implement semaphores.
+    To synchronize sleeping and waiting calls so that no thread will sleep forever.
+
+2. Why does the lock API in OS/161 provide lock_do_i_hold(), but not lock_get_holder()?
+    Because locks have to be released by the same thread that acquires them (and thereby prevent malicious actions).
