@@ -97,7 +97,7 @@ student(void *p, unsigned long which)
     // If the answer changes while we're reading it, panic!  Panic so much that
     // the kernel explodes.
     if (*pos != '\0') {
-      panic("[%d:%d] Inconsistent answer!\n", (int)which, n);
+      panic("[%d:%d] Inconsistent answer!\n", (int)which, n); //TODO figure out why
     }
   }
 }
@@ -126,7 +126,42 @@ instructor(void *p, unsigned long which)
   (void)p;
   (void)which;
 
-  (void)piazza_print; // suppress warning until code gets written
+  int i, n;
+  char letter, *pos;
+
+  for (i = 0; i < NCYCLES; ++i) {
+    // Choose a random Piazza question.
+    n = random() % NANSWERS;
+
+    // If first instructor to see the question, create and initalize answers
+    if (questions[n] == NULL) {
+      questions[n] = kmalloc(sizeof(struct piazza_question));
+      const char *answer = "aaaaaaaaaa"; //TODO: have const here?
+      questions[n]->pq_answer = kstrdup(answer); //TODO: doublecheck this
+      //TODO initalize locks
+    }
+    // Update
+    else{
+      pos = questions[n]->pq_answer;
+      letter = *pos;
+
+      if(letter != 'z'){
+        while (*(pos) == letter) {
+          (*pos)++;
+          pos++;
+        }        
+      }
+
+      // Loop back to A's
+      else{
+        while (*(pos) == letter) {
+          *pos = 'a';
+          pos++;
+        }
+      }
+    }
+    piazza_print(n);
+  }
 }
 
 /**
