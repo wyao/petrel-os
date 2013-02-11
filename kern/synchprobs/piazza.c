@@ -36,6 +36,7 @@
 #include <thread.h>
 #include <test.h>
 #include <generic/random.h>
+#include <synch.h>
 
 #include "common.h"
 
@@ -44,7 +45,7 @@
  */
 struct piazza_question {
   char *pq_answer;
-  // Extend the struct as necessary to solve the problem!
+  struct lock *lk;
 };
 
 struct piazza_question *questions[NANSWERS] = { 0 };
@@ -81,11 +82,12 @@ student(void *p, unsigned long which)
     n = random() % NANSWERS;
 
     // If the instructors haven't seen the question yet, try again.
-    if (questions[n] == NULL) {
+    if (questions[n] == NULL || questions[n]->lk == NULL) { //TODO is 2nd check best way to do this?
       --i;
       continue;
     }
 
+    lock_acquire(questions[n]->lk);
     pos = questions[n]->pq_answer;
     letter = *pos;
 
@@ -99,6 +101,7 @@ student(void *p, unsigned long which)
     if (*pos != '\0') {
       panic("[%d:%d] Inconsistent answer!\n", (int)which, n); //TODO figure out why
     }
+    lock_release(questions[n]->lk);
   }
 }
 
@@ -136,12 +139,15 @@ instructor(void *p, unsigned long which)
     // If first instructor to see the question, create and initalize answers
     if (questions[n] == NULL) {
       questions[n] = kmalloc(sizeof(struct piazza_question));
+      questions[n]->lk = lock_create("lk"); //TODO: include which?
+      lock_acquire(questions[n]->lk);
+
       const char *answer = "aaaaaaaaaa"; //TODO: have const here?
-      questions[n]->pq_answer = kstrdup(answer); //TODO: doublecheck this
-      //TODO initalize locks
+      questions[n]->pq_answer = kstrdup(answer);
     }
     // Update
     else{
+      lock_acquire(questions[n]->lk);
       pos = questions[n]->pq_answer;
       letter = *pos;
 
@@ -161,6 +167,7 @@ instructor(void *p, unsigned long which)
       }
     }
     piazza_print(n);
+    lock_release(questions[n]->lk);
   }
 }
 
