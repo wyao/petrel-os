@@ -35,6 +35,7 @@
 #include <lib.h>
 #include <thread.h>
 #include <test.h>
+#include <synch.h>
 
 #include "common.h"
 
@@ -70,6 +71,32 @@ NAMEOF_FUNC(hobbitses);
 
 #undef NAMEOF_FUNC
 
+struct fellowship {
+  char *names[9];
+  int total;
+
+  // Numbers of each
+  int wizard;
+  int man;
+  int elf;
+  int dwarf;
+  int hobbit;
+
+  struct lock *fellowship_lk;
+  struct lock *cv_lk;
+  struct cv *ready;
+};
+
+typedef enum
+{
+  WIZARD, MAN, ELF, DWARF, HOBBIT
+} race;
+
+// Global
+struct fellowship *fs;
+struct semaphore *print_lock;
+struct lock *cleanup_lock;
+int count;
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -79,48 +106,159 @@ NAMEOF_FUNC(hobbitses);
 //
 
 static void
+join(char* name, race r){
+  int i,j;
+
+  // Try to join each fellowship
+  for(i=0; i<NFOTRS; i++){
+    lock_acquire(fs[i].fellowship_lk);
+
+    // Check space availability
+    int available = 0;
+    switch(r)
+    {
+      case WIZARD:
+        available = (fs[i].wizard < 1);
+        break;
+      case MAN:
+        available = (fs[i].man < 2);
+        break;
+      case ELF:
+        available = (fs[i].elf < 1);
+        break;
+      case DWARF:
+        available = (fs[i].dwarf < 1);
+        break;
+      case HOBBIT:
+        available = (fs[i].hobbit < 4);
+        break;
+    }
+
+    if(available){
+
+      // Claim a spot
+      fs[i].names[fs[i].total] = kstrdup(name);
+      fs[i].total++;
+      switch(r)
+      {
+        case WIZARD:
+          fs[i].wizard++;
+          break;
+        case ELF:
+          fs[i].elf++;
+          break;
+        case DWARF:
+          fs[i].dwarf++;
+          break;
+        case MAN:
+          fs[i].man++;
+          break;
+        case HOBBIT:
+          fs[i].hobbit++;
+          break;
+      }
+
+      // Check if the fellowship is formed
+      if(fs[i].total == 9){
+        // Fellowship formed!
+        P(print_lock);
+        kprintf("FELLOWSHIP:\t%s", fs[i].names[0]);
+        for(j=1; j<9; j++){
+          kprintf(", %s", fs[i].names[j]);
+        }
+        kprintf("\n");
+        kprintf("LEAVING:\t%s\n", name);
+        V(print_lock);
+
+        // Rally the fellowship
+        lock_acquire(fs[i].cv_lk);
+        cv_broadcast(fs[i].ready, fs[i].cv_lk);
+        lock_release(fs[i].cv_lk);
+        lock_release(fs[i].fellowship_lk);
+
+        // For cleanup
+        lock_acquire(cleanup_lock);
+        count++;
+        lock_release(cleanup_lock);
+      }
+
+      // Fellowship not ready, wait
+      else{
+        lock_acquire(fs[i].cv_lk);
+        lock_release(fs[i].fellowship_lk);
+        cv_wait(fs[i].ready, fs[i].cv_lk);
+
+        // Leave for quest
+        lock_release(fs[i].cv_lk);
+        P(print_lock);
+        kprintf("LEAVING:\t%s\n", name);
+        V(print_lock);
+
+        // For cleanup
+        lock_acquire(cleanup_lock);
+        count++;
+        lock_release(cleanup_lock);
+      }
+    }
+
+    // No space; check next followship
+    else{
+      lock_release(fs[i].fellowship_lk);
+    }
+  }
+  // Cleanup memory
+
+  lock_acquire(cleanup_lock);
+  if(count == 9 * NFOTRS){
+    for(int i; i<NFOTRS; i++){
+      lock_destroy(fs[i].fellowship_lk);
+      lock_destroy(fs[i].cv_lk);
+      cv_destroy(fs[i].ready);
+    }
+    kfree(fs);
+  }
+  lock_release(cleanup_lock);
+
+}
+
+static void
 wizard(void *p, unsigned long which)
 {
   (void)p;
-
-  // TODO: Join a fellowship.
-  nameof_istari(which);
+  char *name = kstrdup(nameof_istari(which));
+  join(name, WIZARD);
 }
 
 static void
 man(void *p, unsigned long which)
 {
   (void)p;
-
-  // TODO: Join a fellowship.
-  nameof_menfolk(which);
+  char *name = kstrdup(nameof_menfolk(which));
+  join(name, MAN);
 }
 
 static void
 elf(void *p, unsigned long which)
 {
   (void)p;
-
-  // TODO: Join a fellowship.
-  nameof_eldar(which);
+  char *name = kstrdup(nameof_eldar(which));
+  join(name, ELF);
 }
 
 static void
 dwarf(void *p, unsigned long which)
 {
   (void)p;
-
-  // TODO: Join a fellowship.
-  nameof_khazad(which);
+  char *name = kstrdup(nameof_khazad(which));
+  join(name, DWARF);
 }
 
 static void
 hobbit(void *p, unsigned long which)
 {
   (void)p;
-
-  // TODO: Join a fellowship.
-  nameof_hobbitses(which);
+  char *name = kstrdup(nameof_hobbitses(which));
+  join(name, HOBBIT);
 }
 
 /**
@@ -142,6 +280,17 @@ fellowship(int nargs, char **args)
 
   (void)nargs;
   (void)args;
+
+  // Initialize fellowships; does not cleanup in case of error for now
+  fs = kmalloc(NFOTRS * sizeof(struct fellowship));
+  print_lock = sem_create("print lock", 1);
+  cleanup_lock = lock_create("cleanup lock");
+
+  for (i=0; i<NFOTRS; i++){
+    fs[i].fellowship_lk = lock_create("fellowship_lk");
+    fs[i].cv_lk = lock_create("cv_lk");
+    fs[i].ready = cv_create("ready");
+  }
 
   for (i = 0; i < NFOTRS; ++i) {
     thread_fork_or_panic("wizard", wizard, NULL, i, NULL);
