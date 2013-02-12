@@ -50,10 +50,16 @@ struct piazza_question {
   struct cv *writerQ;
   int readers;
   int writers;
+  int active_writer;
 };
 
 struct piazza_question *questions[NANSWERS] = { 0 };
+
 struct lock *creation_lock[NANSWERS];
+struct semaphore *driver_sem;
+struct lock *thread_count_lock;
+
+int finished_thread_count = 0;
 
 static void
 piazza_print(int id)
@@ -87,17 +93,18 @@ student(void *p, unsigned long which)
     n = random() % NANSWERS;
 
     // If the instructors haven't seen the question yet, try again.
-    lock_acquire(creation_lock[n]);
     if (questions[n] == NULL) {
-      lock_release(creation_lock[n]);
       --i;
       continue;
     }
+    lock_acquire(creation_lock[n]);
     lock_release(creation_lock[n]);
 
+    // Set up reader lock
     lock_acquire(questions[n]->mutex);
-    while(!(questions[n]->writers==0))
+    while(!(questions[n]->writers==0)){
       cv_wait(questions[n]->readerQ, questions[n]->mutex);
+    }
     questions[n]->readers++;
     lock_release(questions[n]->mutex);
 
@@ -118,11 +125,19 @@ student(void *p, unsigned long which)
 
     /* End read */
 
+    // Close reader lock
     lock_acquire(questions[n]->mutex);
-    if(--(questions[n]->readers) == 0)
+    questions[n]->readers--;
+    if(questions[n]->readers == 0){
       cv_signal(questions[n]->writerQ, questions[n]->mutex);
+    }
     lock_release(questions[n]->mutex);
   }
+  // Exiting thread
+  lock_acquire(thread_count_lock);
+  if(++finished_thread_count == NSTUDENTS + NINSTRUCTORS)
+    V(driver_sem);
+  lock_release(thread_count_lock);
 }
 
 /**
@@ -163,21 +178,30 @@ instructor(void *p, unsigned long which)
       questions[n]->mutex = lock_create("mutex");
       questions[n]->readerQ = cv_create("readerQ");
       questions[n]->writerQ = cv_create("writerQ");
+      questions[n]->readers = 0;
+      questions[n]->writers = 0;
+      questions[n]->active_writer = 0;
 
       const char *answer = "aaaaaaaaaa"; //TODO: have const here?
       questions[n]->pq_answer = kstrdup(answer);      
 
       lock_release(creation_lock[n]);
+
+      // Print submitted answer
+      piazza_print(n);
     }
 
     // Not the first instructor
     else{
       lock_release(creation_lock[n]);
 
+      // Set up writer lock
       lock_acquire(questions[n]->mutex);
-      while(!(questions[n]->readers == 0) && (questions[n]->writers ==0))
-        cv_wait(questions[n]->writerQ, questions[n]->mutex);
       questions[n]->writers++;
+      while(!((questions[n]->readers == 0) && (questions[n]->active_writer == 0))){
+        cv_wait(questions[n]->writerQ, questions[n]->mutex);
+      }
+      questions[n]->active_writer++;
       lock_release(questions[n]->mutex);
 
       /* Start write */
@@ -199,18 +223,30 @@ instructor(void *p, unsigned long which)
           pos++;
         }
       }
+    
+      // Print submitted answer
+      piazza_print(n);
+
+      /* End write */
+
+      // Clean up writer lock
+      lock_acquire(questions[n]->mutex);
+      questions[n]->active_writer--;
+      questions[n]->writers--;
+      if(questions[n]->writers==0){
+        cv_broadcast(questions[n]->readerQ, questions[n]->mutex);
+      }
+      else{
+        cv_signal(questions[n]->writerQ, questions[n]->mutex);
+      }
+      lock_release(questions[n]->mutex);
     }
-    // Print submitted answer
-    piazza_print(n);
-
-    /* End write */
-
-    lock_acquire(questions[n]->mutex);
-    questions[n]->writers--;
-    cv_signal(questions[n]->writerQ, questions[n]->mutex);
-    cv_signal(questions[n]->readerQ, questions[n]->mutex);
-    lock_release(questions[n]->mutex);
   }
+  // Exiting thread
+  lock_acquire(thread_count_lock);
+  if(++finished_thread_count == NSTUDENTS + NINSTRUCTORS)
+    V(driver_sem);
+  lock_release(thread_count_lock);
 }
 
 /**
@@ -236,6 +272,8 @@ piazza(int nargs, char **args)
   for(i=0; i<NANSWERS; i++){
     creation_lock[i] = lock_create("creation lock");
   }
+  driver_sem = sem_create("driver semaphore", 0);
+  thread_count_lock = lock_create("thread count lock");
 
   for (i = 0; i < NSTUDENTS; ++i) {
     thread_fork_or_panic("student", student, NULL, i, NULL);
@@ -243,6 +281,9 @@ piazza(int nargs, char **args)
   for (i = 0; i < NINSTRUCTORS; ++i) {
     thread_fork_or_panic("instructor", instructor, NULL, i, NULL);
   }
+
+  // Wait for task to finish
+  P(driver_sem);
 
   return 0;
 }
