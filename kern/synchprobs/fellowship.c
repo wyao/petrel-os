@@ -209,17 +209,8 @@ join(char* name, race r){
     }
   }
   // Cleanup memory
-  lock_acquire(cleanup_lock);
-  if(count == 9 * NFOTRS){
-    for(int i; i<NFOTRS; i++){
-      lock_destroy(fs[i].fellowship_lk);
-      lock_destroy(fs[i].cv_lk);
-      cv_destroy(fs[i].ready);
-    }
-    kfree(fs);
+  if(count == 9 * NFOTRS)
     V(driver_sem);
-  }
-  lock_release(cleanup_lock);
 }
 
 static void
@@ -228,6 +219,7 @@ wizard(void *p, unsigned long which)
   (void)p;
   char *name = kstrdup(nameof_istari(which));
   join(name, WIZARD);
+  kfree(name);
 }
 
 static void
@@ -236,6 +228,7 @@ man(void *p, unsigned long which)
   (void)p;
   char *name = kstrdup(nameof_menfolk(which));
   join(name, MAN);
+  kfree(name);
 }
 
 static void
@@ -244,6 +237,7 @@ elf(void *p, unsigned long which)
   (void)p;
   char *name = kstrdup(nameof_eldar(which));
   join(name, ELF);
+  kfree(name);
 }
 
 static void
@@ -252,6 +246,7 @@ dwarf(void *p, unsigned long which)
   (void)p;
   char *name = kstrdup(nameof_khazad(which));
   join(name, DWARF);
+  kfree(name);
 }
 
 static void
@@ -260,6 +255,7 @@ hobbit(void *p, unsigned long which)
   (void)p;
   char *name = kstrdup(nameof_hobbitses(which));
   join(name, HOBBIT);
+  kfree(name);
 }
 
 /**
@@ -277,7 +273,7 @@ hobbit(void *p, unsigned long which)
 int
 fellowship(int nargs, char **args)
 {
-  int i, n;
+  int i, j, n;
 
   (void)nargs;
   (void)args;
@@ -287,6 +283,7 @@ fellowship(int nargs, char **args)
   print_lock = sem_create("print lock", 1);
   cleanup_lock = lock_create("cleanup lock");
   driver_sem = sem_create("driver semaphore", 0);
+  count = 0;
 
   for (i=0; i<NFOTRS; i++){
     fs[i].fellowship_lk = lock_create("fellowship_lk");
@@ -312,6 +309,19 @@ fellowship(int nargs, char **args)
 
   // Wait on all the threads; clean up
   P(driver_sem);
+
+  for (i=0; i<NFOTRS; i++){
+    lock_destroy(fs[i].fellowship_lk);
+    lock_destroy(fs[i].cv_lk);
+    cv_destroy(fs[i].ready);
+    for(j=0; j<9; j++)
+      kfree(fs[i].names[j]);
+  }
+
+  sem_destroy(print_lock);
+  lock_destroy(cleanup_lock);
+  sem_destroy(driver_sem);
+  kfree(fs);
 
   return 0;
 }

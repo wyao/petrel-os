@@ -288,6 +288,7 @@ piazza(int nargs, char **args)
     lock_destroy(questions[i]->mutex);
     cv_destroy(questions[i]->readerQ);
     cv_destroy(questions[i]->writerQ);
+    kfree(questions[i]->pq_answer);
     kfree(questions[i]);
     questions[i] = NULL;
 
