@@ -87,6 +87,8 @@ struct fellowship {
   struct cv *ready;
 };
 
+struct semaphore *driver_sem;
+
 typedef enum
 {
   WIZARD, MAN, ELF, DWARF, HOBBIT
@@ -207,7 +209,6 @@ join(char* name, race r){
     }
   }
   // Cleanup memory
-
   lock_acquire(cleanup_lock);
   if(count == 9 * NFOTRS){
     for(int i; i<NFOTRS; i++){
@@ -216,9 +217,9 @@ join(char* name, race r){
       cv_destroy(fs[i].ready);
     }
     kfree(fs);
+    V(driver_sem);
   }
   lock_release(cleanup_lock);
-
 }
 
 static void
@@ -281,10 +282,11 @@ fellowship(int nargs, char **args)
   (void)nargs;
   (void)args;
 
-  // Initialize fellowships; does not cleanup in case of error for now
+  // Initialize fellowships
   fs = kmalloc(NFOTRS * sizeof(struct fellowship));
   print_lock = sem_create("print lock", 1);
   cleanup_lock = lock_create("cleanup lock");
+  driver_sem = sem_create("driver semaphore", 0);
 
   for (i=0; i<NFOTRS; i++){
     fs[i].fellowship_lk = lock_create("fellowship_lk");
@@ -307,6 +309,9 @@ fellowship(int nargs, char **args)
   for (i = 0, n = NFOTRS * HOBBITS_PER_FOTR; i < n; ++i) {
     thread_fork_or_panic("hobbit", hobbit, NULL, i, NULL);
   }
+
+  // Wait on all the threads; clean up
+  P(driver_sem);
 
   return 0;
 }

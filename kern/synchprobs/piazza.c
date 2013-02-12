@@ -102,9 +102,8 @@ student(void *p, unsigned long which)
 
     // Set up reader lock
     lock_acquire(questions[n]->mutex);
-    while(!(questions[n]->writers==0)){
+    while(!(questions[n]->writers==0))
       cv_wait(questions[n]->readerQ, questions[n]->mutex);
-    }
     questions[n]->readers++;
     lock_release(questions[n]->mutex);
 
@@ -128,9 +127,8 @@ student(void *p, unsigned long which)
     // Close reader lock
     lock_acquire(questions[n]->mutex);
     questions[n]->readers--;
-    if(questions[n]->readers == 0){
+    if(questions[n]->readers == 0)
       cv_signal(questions[n]->writerQ, questions[n]->mutex);
-    }
     lock_release(questions[n]->mutex);
   }
   // Exiting thread
@@ -198,9 +196,8 @@ instructor(void *p, unsigned long which)
       // Set up writer lock
       lock_acquire(questions[n]->mutex);
       questions[n]->writers++;
-      while(!((questions[n]->readers == 0) && (questions[n]->active_writer == 0))){
+      while(!((questions[n]->readers == 0) && (questions[n]->active_writer == 0)))
         cv_wait(questions[n]->writerQ, questions[n]->mutex);
-      }
       questions[n]->active_writer++;
       lock_release(questions[n]->mutex);
 
@@ -233,12 +230,10 @@ instructor(void *p, unsigned long which)
       lock_acquire(questions[n]->mutex);
       questions[n]->active_writer--;
       questions[n]->writers--;
-      if(questions[n]->writers==0){
+      if(questions[n]->writers==0)
         cv_broadcast(questions[n]->readerQ, questions[n]->mutex);
-      }
-      else{
+      else
         cv_signal(questions[n]->writerQ, questions[n]->mutex);
-      }
       lock_release(questions[n]->mutex);
     }
   }
@@ -269,9 +264,8 @@ piazza(int nargs, char **args)
   (void)args;
 
   // Initalize creation locks
-  for(i=0; i<NANSWERS; i++){
+  for(i=0; i<NANSWERS; i++)
     creation_lock[i] = lock_create("creation lock");
-  }
   driver_sem = sem_create("driver semaphore", 0);
   thread_count_lock = lock_create("thread count lock");
 
@@ -284,6 +278,19 @@ piazza(int nargs, char **args)
 
   // Wait for task to finish
   P(driver_sem);
+
+  // Cleanup
+  for(i=0; i<NANSWERS; i++){
+    /*
+    lock_destroy(questions[i]->mutex);
+    cv_destroy(questions[i]->readerQ);
+    cv_destroy(questions[i]->writerQ);
+    kfree(questions[i]);
+    */
+    lock_destroy(creation_lock[i]);
+  }
+  sem_destroy(driver_sem);
+  lock_destroy(thread_count_lock);
 
   return 0;
 }
