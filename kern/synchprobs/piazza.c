@@ -59,7 +59,7 @@ struct lock *creation_lock[NANSWERS];
 struct semaphore *driver_sem;
 struct lock *thread_count_lock;
 
-int finished_thread_count = 0;
+int finished_thread_count;
 
 static void
 piazza_print(int id)
@@ -239,9 +239,12 @@ instructor(void *p, unsigned long which)
   }
   // Exiting thread
   lock_acquire(thread_count_lock);
-  if(++finished_thread_count == NSTUDENTS + NINSTRUCTORS)
+  if(++finished_thread_count == NSTUDENTS + NINSTRUCTORS){
+    lock_release(thread_count_lock);
     V(driver_sem);
-  lock_release(thread_count_lock);
+  }
+  else
+    lock_release(thread_count_lock);
 }
 
 /**
@@ -263,11 +266,12 @@ piazza(int nargs, char **args)
   (void)nargs;
   (void)args;
 
-  // Initalize creation locks
+  // Initalize locks and globals
   for(i=0; i<NANSWERS; i++)
     creation_lock[i] = lock_create("creation lock");
   driver_sem = sem_create("driver semaphore", 0);
   thread_count_lock = lock_create("thread count lock");
+  finished_thread_count = 0;
 
   for (i = 0; i < NSTUDENTS; ++i) {
     thread_fork_or_panic("student", student, NULL, i, NULL);
@@ -281,12 +285,12 @@ piazza(int nargs, char **args)
 
   // Cleanup
   for(i=0; i<NANSWERS; i++){
-    /*
     lock_destroy(questions[i]->mutex);
     cv_destroy(questions[i]->readerQ);
     cv_destroy(questions[i]->writerQ);
     kfree(questions[i]);
-    */
+    questions[i] = NULL;
+
     lock_destroy(creation_lock[i]);
   }
   sem_destroy(driver_sem);
