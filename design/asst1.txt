@@ -1,3 +1,10 @@
+Note on the assignment:
+
+The intentions of the unit tests are commented inline in the synchtest.c file.
+The unit tests for locks and cvs can be run as "ut1" and "ut2" from the menu
+respectively. Correctness criteria have also be defined for fotr and pz in the
+comments on the top of each respective file.
+
 Thread Questions
 
 1. What happens to a thread when it exits (i.e., calls thread_exit())? What about when it sleeps?
