@@ -449,6 +449,7 @@ static const char *testmenu[] = {
 	"[sy1] Semaphore test                ",
 	"[sy2] Lock test             (1)     ",
 	"[sy3] CV test               (1)     ",
+	"[ut1] Lock unit test                ",
 	"[fs1] Filesystem test               ",
 	"[fs2] FS read stress        (4)     ",
 	"[fs3] FS write stress       (4)     ",

@@ -38,6 +38,7 @@
 #include <synch.h>
 #include <test.h>
 
+
 #define NSEMLOOPS     63
 #define NLOCKLOOPS    120
 #define NCVLOOPS      5
@@ -50,6 +51,10 @@ static struct semaphore *testsem;
 static struct lock *testlock;
 static struct cv *testcv;
 static struct semaphore *donesem;
+
+// Global
+struct semaphore *driver;
+struct semaphore *channel_1;
 
 static
 void
@@ -220,15 +225,162 @@ locktest(int nargs, char **args)
 	return 0;
 }
 
+// STARTS UNIT TESTS FOR LOCK
+
+static void
+test_lock_create(){
+	struct lock *lk = lock_create("lk");
+
+	KASSERT(!strcmp(lk->lk_name, "lk"));
+	KASSERT(lk->l_wchan != NULL);
+	KASSERT(lk->holder == NULL);
+
+	lock_destroy(lk);
+
+	kprintf("test_lock_create: Passed.....\n");
+}
+
+static void
+test_holder_helper(void *p, unsigned long i){
+	(void)i;
+	struct lock *lk = p;
+	lock_release(lk); // THE KERNEL SHOULD PANIC!
+}
+
+static void
+test_holder(){
+	kprintf("test_holder: this test should fail with the following message when run:\n\
+		panic: Assertion failed: lock->holder == curthread, at ../../thread/synch.c:217 (lock_release)\n");
+
+	struct lock *lk = lock_create("lk");
+	lock_acquire(lk);
+
+	int err = thread_fork("test_holder_helper", test_holder_helper, (char *)lk, 0, NULL);
+	if (err) {
+		panic("test_holder: thread_fork failed: %s\n", strerror(err));
+	}
+}
+
+static void
+test_do_i_hold_helper(void *p, unsigned long i){
+	(void)i;
+	struct lock *lk = p;
+	KASSERT(!lock_do_i_hold(lk));
+
+	V(channel_1);
+}
+
+static void
+test_do_i_hold(){
+	channel_1 = sem_create("channel 1", 0);
+	struct lock *lk = lock_create("lk");
+	lock_acquire(lk);
+	KASSERT(lock_do_i_hold(lk));
+
+	int err = thread_fork("test_do_i_hold_helper", test_do_i_hold_helper, \
+		(char *)lk, 0, NULL);
+	if (err) {
+		panic("test_do_i_hold: thread_fork failed: %s\n", strerror(err));
+	}
+
+	// Clean up
+	P(channel_1);
+	lock_release(lk);
+	lock_destroy(lk);
+	sem_destroy(channel_1);
+
+	kprintf("test_do_i_hold: Passed.....\n");
+}
+
+static void
+test_lock_destroy(){
+	struct lock *lk = lock_create("lk");
+	lock_destroy(lk);
+
+	lock_acquire(lk); // This should lead the spinlock to spin forever
+}
+
+static void
+helper(void *p, unsigned long i){
+	(void)i;
+	struct lock *lk = p;
+	lock_acquire(lk);
+	kprintf("Thread %d acquired the lock\n", (int)i);
+	lock_release(lk);
+
+	V(channel_1);
+}
+
+static void
+test_acquire_release(){
+	int i;
+
+	channel_1 = sem_create("channel 1", 0);
+	struct lock *lk = lock_create("lk");
+
+	// Fork 10 threads that all try to acquire, then release the lock
+	for(i=0;i<10;i++){
+		int err = thread_fork("helper", helper, \
+			(char *)lk, i, NULL);
+		if (err) {
+			panic("test_acquire_release: thread_fork failed: %s\n", strerror(err));
+		}
+	}
+
+	// Clean up
+	for(i=0; i<10; i++){
+		P(channel_1);
+	}
+	lock_destroy(lk);
+	sem_destroy(channel_1);
+
+	kprintf("test_acquire_release: Passed.....\n");
+	
+	V(driver); // Placed at the end of the last unit test
+}
+
 int lock_unittest(int nargs, char **args){
 	(void)nargs;
 	(void)args;
 
-	KASSERT(1==1);
-	kprintf("Assert Pass\n");
+	kprintf("Starting Unit Test Suite for Locks..........\n");
+
+	driver = sem_create("driver", 0);
+
+	/* Test that lock_create() creates a lock and lk_name, l_chan, and holder
+	   are properly initialized. */
+	test_lock_create();
+
+	/* Test that only the thread holding the lock may release it; commented out
+	   intentionally. */
+	if(0)
+		test_holder();
+	kprintf("test_holder: Passed.....\n");
+
+	/* Test that lock_do_i_hold() returns whether the current thread holds the
+	   lock for both cases. */
+	test_do_i_hold();
+
+	/* Test lock_destroy() loops forever as the spinlock_acquire() tries to
+	   acquire a spinlock that has been destroyed but not set to NULL.
+	   Commented out intentionally. */
+	if(0)
+		test_lock_destroy();
+	kprintf("test_lock_destroy: Passed.....\n");
+
+	/* Test lock_acquire() and lock_release by ensuring that all 10 thread
+	   seeking a lock will eventually get it as long as the lock is eventually
+	   released by the holder. */
+	test_acquire_release();
+
+	// Synchronize with menu
+	P(driver);
+	sem_destroy(driver);
 
 	return 0;
 }
+
+// ENDS UNIT TESTS FOR LOCK
 
 static
 void

@@ -179,19 +179,20 @@ lock_create(const char *name)
 void
 lock_destroy(struct lock *lock)
 {
-	//KASSERT(lock != NULL);
+	KASSERT(lock != NULL);
 	KASSERT(lock->holder == NULL);
 
 	spinlock_cleanup(&lock->sp_lock);
 	wchan_destroy(lock->l_wchan);
 	kfree(lock->lk_name);
 	kfree(lock);
+	lock = NULL;
 }
 
 void
 lock_acquire(struct lock *lock)
 {
-	//KASSERT(lock != NULL);
+	KASSERT(lock != NULL);
 	KASSERT(curthread->t_in_interrupt == false);
 
 	spinlock_acquire(&lock->sp_lock);
@@ -210,7 +211,7 @@ lock_acquire(struct lock *lock)
 void
 lock_release(struct lock *lock)
 {
-	//KASSERT(lock != NULL);
+	KASSERT(lock != NULL);
 
 	spinlock_acquire(&lock->sp_lock);
 
@@ -226,7 +227,7 @@ lock_release(struct lock *lock)
 bool
 lock_do_i_hold(struct lock *lock)
 {
-	//KASSERT(lock != NULL);
+	KASSERT(lock != NULL);
 	bool holds_lock;
 
 	spinlock_acquire(&lock->sp_lock);
