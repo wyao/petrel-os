@@ -73,6 +73,7 @@ int nettest(int, char **);
 
 /* unit tests */
 int lock_unittest(int, char **);
+int cv_unittest(int, char **);
 
 /* Routine for running a user-level program. */
 int runprogram(char *progname);

@@ -55,6 +55,7 @@ static struct semaphore *donesem;
 // Global
 struct semaphore *driver;
 struct semaphore *channel_1;
+struct lock *cv_lock;
 
 static
 void
@@ -343,9 +344,9 @@ int lock_unittest(int nargs, char **args){
 	(void)nargs;
 	(void)args;
 
-	kprintf("Starting Unit Test Suite for Locks..........\n");
-
 	driver = sem_create("driver", 0);
+
+	kprintf("Starting Unit Test Suite for Locks..........\n");
 
 	/* Test that lock_create() creates a lock and lk_name, l_chan, and holder
 	   are properly initialized. */
@@ -381,6 +382,148 @@ int lock_unittest(int nargs, char **args){
 }
 
 // ENDS UNIT TESTS FOR LOCK
+
+
+// STARTS UNIT TESTS FOR CV
+
+static void
+test_cv_create(){
+	struct cv *cv = cv_create("cv");
+
+	KASSERT(!strcmp(cv->cv_name, "cv"));
+	KASSERT(cv->cv_wchan != NULL);
+
+	cv_destroy(cv);
+
+	kprintf("test_cv_create: Passed.....\n");
+}
+
+
+static void
+test_cv_signal_helper(void *p, unsigned long i){
+	(void)i;
+	struct cv *cv = p;
+
+	lock_acquire(cv_lock);
+	V(channel_1);
+	cv_wait(cv, cv_lock);
+	kprintf("Signaled!\n");
+	lock_release(cv_lock);
+
+	V(channel_1);
+}
+
+static void
+test_cv_signal(){
+	int i;
+	struct cv *cv = cv_create("cv");
+	cv_lock = lock_create("cv lock");
+	channel_1 = sem_create("channel 1", 0);
+
+	kprintf("Signal recieved should only print once:\n");
+
+	// Fork 2 threads, only 1 of which should recieve the signal
+	for(i=0;i<2;i++){
+		int err = thread_fork("test_cv_signal_helper", test_cv_signal_helper, \
+			(char *)cv, 0, NULL);
+		if (err) {
+			panic("test_cv_signal_helper: thread_fork failed: %s\n", strerror(err));
+		}
+	}
+	// Wait for threads to be ready
+	for(i=0;i<2;i++){
+		P(channel_1);
+	}
+
+	lock_acquire(cv_lock);
+	cv_signal(cv, cv_lock);
+	lock_release(cv_lock);
+
+	// Clean up
+	P(channel_1);
+	sem_destroy(channel_1);
+
+	kprintf("test_cv_signal: Passed.....\n");
+}
+
+static void
+test_cv_broadcast_helper(void *p, unsigned long i){
+	struct cv *cv = p;
+
+	lock_acquire(cv_lock);
+	V(channel_1);
+	cv_wait(cv, cv_lock);
+	kprintf("Thrad %d signaled!\n", (int) i);
+	lock_release(cv_lock);
+
+	V(channel_1);
+}
+
+static void
+test_cv_broadcast(){
+	int i;
+	struct cv *cv = cv_create("cv");
+	cv_lock = lock_create("cv lock");
+	channel_1 = sem_create("channel 1", 0);
+
+	// Fork 10 threads; all should recieve the signal
+	for(i=0;i<10;i++){
+		int err = thread_fork("test_cv_broadcast_helper", test_cv_broadcast_helper, \
+			(char *)cv, i, NULL);
+		if (err) {
+			panic("test_cv_broadcast_helper: thread_fork failed: %s\n", strerror(err));
+		}
+	}
+	// Wait for threads to be ready
+	for(i=0;i<10;i++){
+		P(channel_1);
+	}
+
+	lock_acquire(cv_lock);
+	cv_broadcast(cv, cv_lock);
+	lock_release(cv_lock);
+
+	// Clean up
+	for(i=0;i<10;i++){
+		P(channel_1);
+	}
+
+	cv_destroy(cv);
+	lock_destroy(cv_lock);
+	sem_destroy(channel_1);
+
+	kprintf("test_cv_broadcast: Passed.....\n");
+
+	V(driver); // Placed at the end of the last unit test
+}
+
+int cv_unittest(int nargs, char **args){
+	(void)nargs;
+	(void)args;
+
+	driver = sem_create("driver", 0);
+
+	kprintf("Starting Unit Test Suite for CVs..........\n");
+
+	/* Test that cv_create() creates a cv with cv_name and cv_wchan properly
+	   initialized. */
+	test_cv_create();
+
+	/* Test that cv_signal() signals 1 waiting thread and only 1. */
+	test_cv_signal();
+
+	/* Test that cv_broadcast signals all waiting threads. */
+	test_cv_broadcast();
+
+	// Synchronize with menu
+	P(driver);
+	sem_destroy(driver);
+
+	return 0;
+}
+
+
+// ENDS UNIT TESTS FOR CV
 
 static
 void
