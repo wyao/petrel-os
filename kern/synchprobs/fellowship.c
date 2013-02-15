@@ -27,6 +27,27 @@
  * SUCH DAMAGE.
  */
 
+/* Correctness criteria:
+- There should be NFOTRS * (HOBBITS_PER_FOTR + MEN_PER_FOTR + 3) lines of output
+  indicating that someone is leaving, and HOBBITS_PER_FOTR lines of output
+  indivating that a fellowship is formed. Using the default values in common.h,
+  this would be 90 outputs of someone leaving, and 10 outputs of fellowships
+  being formed for a total of 100 outputs. Note that this is under the
+  assumption that threads are pawned the way that they are provided in the
+  driver code. If we modify the radio of races to NFOTRS, then we need to
+  replace the NFOTRS value used above with:
+    Min(TOTAL_HOBBITS/4, TOTAL_MEN/2, TOTAL_OF_EACH_OF_THE_OTHER_RACES)
+  Note that I did not explicitly test for such a scenario since that would be
+  modifying the given driver code.
+- No one should leave twice (unless there are duplicate names, which I don't
+  believe there to be).
+- One has to leave AFTER his fellowship is formed, not before. However one can
+  leave any time after, regardless of when other fellowships are formed.
+
+  By running fotr and painstakingly parsing the data, all of the above
+  correctness criteria have been met.
+*/
+
 /**
  * Driver code for The Fellowship of the Ring synch problem.
  */

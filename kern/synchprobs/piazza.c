@@ -27,6 +27,27 @@
  * SUCH DAMAGE.
  */
 
+/* Correctness criteria:
+- There should be NINSTRUCTORS * NCYCLES lines of output in the format:
+[ 1] aaaaaaaaaa
+  Using the default values in common.h, this would be 500 lines of output.
+- The program should not panic, least of all because an answer changed when a
+  student was reading an answer.
+- There are no restrictions on when a question (indicated by the bracketed
+  number in the output) can be answered (ie the output can have the questions
+  show up in any order and repeated in any way). However, first time a question
+  is answered, the answer must be "aaaaaaaaaa" and subsequent answers must be
+  the next uncapitalized character in the alphabet, looping back to "aaaaaaaaaa"
+  after "zzzzzzzzzz".
+
+  By running pz and carefully parsing the output, we've concluded that all of
+  the above correctness criteria are met, and so the synchronization problem
+  has been solved correctly using reader/writer locks. The way the parsing was
+  performed was by modifying that output such that it took a csv format that we
+  could feed into Excel, sort by question number, and easily eyeball for any
+  violations.
+*/
+
 /**
  * Driver code for the Piazza synch problem.
  */
