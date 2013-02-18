@@ -1,0 +1,36 @@
+Questions
+
+1. What are the ELF magic numbers?
+
+2. What is the difference between UIO_USERISPACE and UIO_USERSPACE? When should one use UIO_SYSSPACE instead?
+
+3. Why can the struct uio that is used to read in a segment be allocated on the stack in load_segment() (i.e., where does the memory read actually go)?
+
+4. In runprogram(), why is it important to call vfs_close() before going to usermode?
+
+5. What function forces the processor to switch into usermode? Is this function machine dependent?
+
+6. In what file are copyin and copyout defined? memmove? Why can't copyin and copyout be implemented as simply as memmove?
+
+7. What (briefly) is the purpose of userptr_t?
+
+
+kern/arch/mips: traps and syscalls
+Questions
+
+1. What is the numerical value of the exception code for a MIPS system call?
+
+2. How many bytes is an instruction in MIPS? (Answer this by reading syscall() carefully, not by looking somewhere else.)
+
+3. Why do you "probably want to change" the implementation of kill_curthread()?
+
+4. What would be required to implement a system call that took more than 4 arguments?
+
+
+Questions
+
+1. What is the purpose of the SYSCALL macro?
+
+2. What is the MIPS instruction that actually triggers a system call? (Answer this by reading the source in this directory, not looking somewhere else.)
+
+3. After reading syscalls-mips.S and syscall.c, you should be prepared to answer the following question: OS/161 supports 64-bit values; lseek() takes and returns a 64-bit offset value. Thus, lseek() takes a 32-bit file handle (arg0), a 64-bit offset (arg1), a 32-bit whence (arg3), and needs to return a 64-bit offset value. In void syscall(struct trapframe *tf) where will you find each of the three arguments (in which registers) and how will you return the 64-bit offset?
