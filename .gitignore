@@ -5,3 +5,5 @@ kern/compile/ASST*
 *.swp
 .depend
 user/testbin/randcall/calls.c
+*.c#
+.#*.c
