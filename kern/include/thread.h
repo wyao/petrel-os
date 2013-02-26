@@ -38,6 +38,7 @@
 
 #include <spinlock.h>
 #include <threadlist.h>
+#include <vnode.h>
 
 struct addrspace;
 struct cpu;
@@ -56,6 +57,7 @@ struct vnode;
 /* Macro to test if two addresses are on the same kernel stack */
 #define SAME_STACK(p1, p2)     (((p1) & STACK_MASK) == ((p2) & STACK_MASK))
 
+#define MAX_FILE_DESCRIPTOR 16
 
 /* States a thread can be in. */
 typedef enum {
@@ -64,6 +66,22 @@ typedef enum {
 	S_SLEEP,	/* sleeping */
 	S_ZOMBIE,	/* zombie; exited but not yet deleted */
 } threadstate_t;
+
+/* Linked list of pids */
+struct pid_list{
+    int pid;
+    struct pid_list *next;
+};
+
+/* File table */
+struct file_table{
+    int status;
+    int offset;
+    int refcnt;
+
+    struct lock *mutex;
+    struct vnode *file;
+};
 
 /* Thread structure. */
 struct thread {
@@ -112,6 +130,12 @@ struct thread {
 	struct vnode *t_cwd;		/* current working directory */
 
 	/* add more here as needed */
+	int pid;
+	int parent_pid;
+	int exit_status;
+
+	struct pid_list *children;
+	struct file_table *fd[MAX_FILE_DESCRIPTOR];
 };
 
 /* Call once during system startup to allocate data structures. */
