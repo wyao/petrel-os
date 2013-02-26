@@ -6,6 +6,7 @@ kern/compile/*
 .depend
 user/testbin/randcall/calls.c
 
+# Emacs Files
 *~
 \#*\#
 /.emacs.desktop
@@ -18,3 +19,22 @@ tramp
 # Org-mode
 .org-id-locations
 *_archive
+
+# C Files
+# Object files
+*.o
+
+# Libraries
+*.lib
+*.a
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
