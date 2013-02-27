@@ -71,7 +71,7 @@ static struct semaphore *cpu_startup_sem;
 
 /* Process table global definitions */
 struct thread **process_table;
-int next_pid = 0;
+struct lock *getpid_lock;
 
 
 ////////////////////////////////////////////////////////////
@@ -79,14 +79,14 @@ int next_pid = 0;
  * Process helper functions
  */
 //TODO: FAIL IF NO SPACE?
-static int getpid(){
+static pid_t getpid(){  
   KASSERT(process_table != NULL);
-  while (process_table[next_pid] != NULL) {
-    next_pid++;
-    if (next_pid >= MAX_PROCESSES)
-      next_pid = 0;
+  int i;
+  for (i=0; i<MAX_PROCESSES; i++){
+  	if (process_table[i] == NULL)
+  		return (pid_t)i;
   }
-  return next_pid;
+  return -1; // No pids available
 }
 
 
@@ -151,6 +151,20 @@ thread_create(const char *name)
 		kfree(thread);
 		return NULL;
 	}
+
+	// Acquire PID
+	// NOTE: PIDS WILL BE FREED DURING REAPING
+	lock_acquire(getpid_lock);
+	pid_t newpid = getpid();
+	if (newpid == -1){
+		kfree(thread);
+		return NULL;
+	}
+	thread->pid = newpid;
+	process_table[newpid] = thread;
+	lock_release(getpid_lock);
+
+
 	thread->t_wchan_name = "NEW";
 	thread->t_state = S_READY;
 
@@ -176,8 +190,9 @@ thread_create(const char *name)
 	
 	/* Process fields */
 	thread->children = NULL;
-	// TODO: What to set parent PID to? Should we acquire our PID here?
-	// TODO: What to do with exit status?
+	int i;
+	for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
+		thread->fd[i] = NULL;
 
 	return thread;
 }
@@ -411,10 +426,12 @@ thread_bootstrap(void)
 	 * Process table initialization
 	 */
 	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
+	getpid_lock = lock_create("getpid");
+	
+	// NOTE: WE ARE ASSUMING THAT THERE IS ONLY ONE THREAD RUNNING AND NO NEED FOR SYNCHRO ON PROCESS TABLE
 	process_table[0] = curthread;
 	curthread->pid = 0;
 	curthread->parent_pid = -1; // First process has no parent
-	next_pid = getpid();
 
 	/* Done */
 }

@@ -71,7 +71,7 @@ typedef enum {
 
 /* Linked list of pids */
 struct pid_list{
-    int pid;
+    pid_t pid;
     struct pid_list *next;
 };
 
@@ -132,8 +132,8 @@ struct thread {
 	struct vnode *t_cwd;		/* current working directory */
 
 	/* add more here as needed */
-	int pid;
-	int parent_pid;
+	pid_t pid;
+	pid_t parent_pid;
 	int exit_status;
 
 	struct pid_list *children;
@@ -145,7 +145,7 @@ struct thread {
  * Process table global declarations
  */
 extern struct thread **process_table;
-extern int next_pid;
+extern struct lock *getpid_lock;
 
 
 /* Call once during system startup to allocate data structures. */
