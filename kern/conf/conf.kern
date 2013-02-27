@@ -428,3 +428,12 @@ file		test/synchtest.c
 file		test/malloctest.c
 file		test/fstest.c
 optfile net	test/nettest.c
+
+
+#########################################
+#					#
+#	   Assignment 2 code		#
+#	   	      			#
+#########################################
+
+file		syscall/io_syscalls.c
