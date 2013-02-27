@@ -100,7 +100,7 @@ boot(void)
 	kprintf("%s", harvard_copyright);
 	kprintf("\n");
 
-	kprintf("Willie Yao's system version %s (%s #%d)\n",
+	kprintf("White-Faced Storm Petrel-OS ver. %s (%s #%d)\n",
 		GROUP_VERSION, buildconfig, buildversion);
 	kprintf("\n");
 
