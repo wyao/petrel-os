@@ -39,6 +39,7 @@
 #include <spinlock.h>
 #include <threadlist.h>
 #include <vnode.h>
+#include <limits.h>
 
 struct addrspace;
 struct cpu;
@@ -57,9 +58,8 @@ struct vnode;
 /* Macro to test if two addresses are on the same kernel stack */
 #define SAME_STACK(p1, p2)     (((p1) & STACK_MASK) == ((p2) & STACK_MASK))
 
-#define MAX_FILE_DESCRIPTOR 16
-#define MAX_PROCESSES 250
-
+#define MAX_FILE_DESCRIPTOR		__FD_MAX
+#define MAX_PROCESSES			__PID_MAX
 
 /* States a thread can be in. */
 typedef enum {
