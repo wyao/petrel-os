@@ -69,6 +69,27 @@ static struct cpuarray allcpus;
 /* Used to wait for secondary CPUs to come online. */
 static struct semaphore *cpu_startup_sem;
 
+/* Process table global definitions */
+struct thread **process_table;
+int next_pid = 0;
+
+
+////////////////////////////////////////////////////////////
+/*
+ * Process helper functions
+ */
+//TODO: FAIL IF NO SPACE?
+static int getpid(){
+  KASSERT(process_table != NULL);
+  while (process_table[next_pid] != NULL) {
+    next_pid++;
+    if (next_pid >= MAX_PROCESSES)
+      next_pid = 0;
+  }
+  return next_pid;
+}
+
+
 ////////////////////////////////////////////////////////////
 
 /*
@@ -152,6 +173,11 @@ thread_create(const char *name)
 	thread->t_cwd = NULL;
 
 	/* If you add to struct thread, be sure to initialize here */
+	
+	/* Process fields */
+	thread->children = NULL;
+	// TODO: What to set parent PID to? Should we acquire our PID here?
+	// TODO: What to do with exit status?
 
 	return thread;
 }
@@ -379,6 +405,15 @@ thread_bootstrap(void)
 	 */
 	curthread->t_cpu = curcpu;
 	curcpu->c_curthread = curthread;
+
+
+	/*
+	 * Process table initialization
+	 */
+	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
+	process_table[0] = curthread;
+	curthread->pid = 0;
+	next_pid = getpid();
 
 	/* Done */
 }

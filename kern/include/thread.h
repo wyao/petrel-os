@@ -58,6 +58,8 @@ struct vnode;
 #define SAME_STACK(p1, p2)     (((p1) & STACK_MASK) == ((p2) & STACK_MASK))
 
 #define MAX_FILE_DESCRIPTOR 16
+#define MAX_PROCESSES 250
+
 
 /* States a thread can be in. */
 typedef enum {
@@ -137,6 +139,14 @@ struct thread {
 	struct pid_list *children;
 	struct file_table *fd[MAX_FILE_DESCRIPTOR];
 };
+
+
+/*
+ * Process table global declarations
+ */
+extern struct thread **process_table;
+extern int next_pid;
+
 
 /* Call once during system startup to allocate data structures. */
 void thread_bootstrap(void);
