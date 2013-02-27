@@ -453,7 +453,7 @@ test_cv_broadcast_helper(void *p, unsigned long i){
 	lock_acquire(cv_lock);
 	V(channel_1);
 	cv_wait(cv, cv_lock);
-	kprintf("Thrad %d signaled!\n", (int) i);
+	kprintf("Thread %d signaled!\n", (int) i);
 	lock_release(cv_lock);
 
 	V(channel_1);
