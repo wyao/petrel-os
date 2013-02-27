@@ -128,3 +128,30 @@ sys_write(int fd, userptr_t buf, size_t buf_len, int *err){
   lock_release(curthread->fd[fd]->mutex);
   return read;
 }
+
+int 
+sys_dup2(int oldfd, int newfd, int *err){
+  if (newfd < 0 || oldfd < 0 || newfd > MAX_FILE_DESCRIPTOR || oldfd > MAX_FILE_DESCRIPTOR) {
+    *err = EBADF;
+    return -1;
+  }
+  if (curthread->fd[oldfd] == NULL) {
+    *err = EBADF;
+    return -1;
+  }
+  int i;
+  int j=0;
+  for (i=0; i<MAX_FILE_DESCRIPTOR; i++) {
+    if (curthread->fd[i] != NULL)
+      j++;
+  }
+  if (j==MAX_FILE_DESCRIPTOR){
+    *err = EMFILE;
+    return -1;
+  }
+  if (curthread->fd[newfd] != NULL){
+    *err = sys_close(newfd);
+  }
+  curthread->fd[newfd] = curthread->fd[oldfd];
+  return newfd;
+}

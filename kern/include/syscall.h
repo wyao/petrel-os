@@ -61,6 +61,7 @@ int sys_open(userptr_t filename, int flags, int *err);
 int sys_close(int fd);
 int sys_read(int fd, userptr_t buf, size_t buf_len, int *err);
 int sys_write(int fd, userptr_t buf, size_t nbytes, int *err);
+int sys_dup2(int oldfd, int newfd, int *err);
 
 #endif /* _SYSCALL_H_ */
 
