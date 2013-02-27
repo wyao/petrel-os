@@ -59,5 +59,8 @@ int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 int sys_open(userptr_t filename, int flags, int *err);
 int sys_close(int fd);
+int sys_read(int fd, userptr_t buf, size_t buf_len, int *err);
+int sys_write(int fd, userptr_t buf, size_t nbytes, int *err);
 
 #endif /* _SYSCALL_H_ */
+
