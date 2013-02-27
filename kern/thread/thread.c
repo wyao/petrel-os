@@ -413,6 +413,7 @@ thread_bootstrap(void)
 	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
 	process_table[0] = curthread;
 	curthread->pid = 0;
+	curthread->parent_pid = -1; // First process has no parent
 	next_pid = getpid();
 
 	/* Done */

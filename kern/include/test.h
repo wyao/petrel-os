@@ -58,6 +58,9 @@ int semtest(int, char **);
 int locktest(int, char **);
 int cvtest(int, char **);
 
+/* process tests */
+int proctest(int, char **);
+
 /* filesystem tests */
 int fstest(int, char **);
 int readstress(int, char **);
