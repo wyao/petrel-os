@@ -37,3 +37,25 @@ sys_open(userptr_t filename, int flags, int *err) {
   *err = EMFILE;
   return -1;
 }
+
+int sys_close(int fd) {
+  // TODO: should we check if the fd table is non-null or can we assume?
+  if (curthread->fd[fd] == NULL)
+    return EBADF;
+  lock_acquire(curthread->fd[fd]->mutex);
+  
+  curthread->fd[fd]->refcnt--;
+  // Returns void; prints for hard I/O errors so no way to return them
+  vfs_close(curthread->fd[fd]->file);
+  
+  // Free contents of struct (vnode should be freed by vfs_close)
+  if (curthread->fd[fd]->refcnt == 0){
+    lock_release(curthread->fd[fd]->mutex);
+    lock_destroy(curthread->fd[fd]->mutex);
+    kfree(curthread->fd[fd]);
+    curthread->fd[fd] = NULL;
+  }
+  else
+    lock_release(curthread->fd[fd]->mutex);
+  return 0;
+}
