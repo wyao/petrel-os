@@ -100,8 +100,10 @@ sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
 
   struct uio uio;
   uio.uio_iov = &iov;
+  uio.uio_iovcnt = 1; //Only need one right?
   uio.uio_segflg = UIO_USERSPACE;
   uio.uio_offset = curthread->fd[fd]->offset;
+  uio.uio_space = curthread->t_addrspace;
 
   if (rw == O_RDONLY) {
     uio.uio_rw = UIO_READ;  // TODO: double check return value
