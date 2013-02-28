@@ -80,8 +80,8 @@ sys_close(int fd) {
   return 0;
 }
 
-int 
-sys_read(int fd, userptr_t buf, size_t buf_len, int *err){
+int
+sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
   if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR || curthread->fd[fd] == NULL){
     *err = EBADF;
     return -1;
@@ -89,7 +89,7 @@ sys_read(int fd, userptr_t buf, size_t buf_len, int *err){
   // TODO: Check lock initialized?
   lock_acquire(curthread->fd[fd]->mutex);
   
-  if (curthread->fd[fd]->status == O_WRONLY) {
+  if ((curthread->fd[fd]->status != rw) && (curthread->fd[fd]->status != O_RDWR)) { 
     *err = EBADF;
     lock_release(curthread->fd[fd]->mutex);
     return -1;
@@ -101,49 +101,31 @@ sys_read(int fd, userptr_t buf, size_t buf_len, int *err){
   struct uio uio;
   uio.uio_iov = &iov;
   uio.uio_segflg = UIO_USERSPACE;
-  uio.uio_rw = UIO_READ;
   uio.uio_offset = curthread->fd[fd]->offset;
 
-  // TODO: find out what vop_read actually returns...
-  *err = VOP_READ(curthread->fd[fd]->file,&uio);
-  int read = uio.uio_offset - curthread->fd[fd]->offset;
+  if (rw == O_RDONLY) {
+    uio.uio_rw = UIO_READ;  // TODO: double check return value
+    *err = VOP_READ(curthread->fd[fd]->file,&uio);
+  }
+  else {
+    uio.uio_rw = UIO_WRITE;  // TODO: double check return value
+    *err = VOP_WRITE(curthread->fd[fd]->file,&uio);
+  }
+  int diff = uio.uio_offset - curthread->fd[fd]->offset;
   curthread->fd[fd]->offset = uio.uio_offset;  //TODO: double check this - should be new offset after read
 
   lock_release(curthread->fd[fd]->mutex);
-  return read;
+  return diff;
+}
+
+int 
+sys_read(int fd, userptr_t buf, size_t buf_len, int *err){
+  return sys_rw(fd,buf,buf_len,err,O_RDONLY);
 }
 
 int 
 sys_write(int fd, userptr_t buf, size_t buf_len, int *err){
-  if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR || curthread->fd[fd] == NULL){
-    *err = EBADF;
-    return -1;
-  }
-  // TODO: Check lock initialized?
-  lock_acquire(curthread->fd[fd]->mutex);
-  
-  if (curthread->fd[fd]->status == O_RDONLY) {
-    *err = EBADF;
-    lock_release(curthread->fd[fd]->mutex);
-    return -1;
-  }
-  struct iovec iov;
-  iov.iov_ubase = buf;
-  iov.iov_len = buf_len;
-
-  struct uio uio;
-  uio.uio_iov = &iov;
-  uio.uio_segflg = UIO_USERSPACE;
-  uio.uio_rw = UIO_READ;
-  uio.uio_offset = curthread->fd[fd]->offset;
-
-  // TODO: find out what vop_write actually returns...
-  *err = VOP_WRITE(curthread->fd[fd]->file,&uio);
-  int read = uio.uio_offset - curthread->fd[fd]->offset;
-  curthread->fd[fd]->offset = uio.uio_offset; // TODO: double check this - should be new offset after write
-
-  lock_release(curthread->fd[fd]->mutex);
-  return read;
+  return sys_rw(fd,buf,buf_len,err,O_WRONLY);
 }
 
 int 
