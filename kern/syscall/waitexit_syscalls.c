@@ -10,4 +10,5 @@
 void
 sys__exit(int exitcode){
 	(void)exitcode;
+	thread_exit();
 }
