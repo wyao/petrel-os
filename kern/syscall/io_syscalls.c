@@ -21,17 +21,34 @@ sys_open(userptr_t filename, int flags, int *err) {
       // Initialize the file table struct and populate it
       // Note: it seems that vfs_open() will malloc and initialize the vnode
       curthread->fd[i] = kmalloc(sizeof(struct file_table));
+      if (curthread->fd[i] == NULL){
+        *err = ENOMEM;
+        goto err1;
+      }
+
+      curthread->fd[i]->mutex = lock_create("mutex");
+      if (curthread->fd[i]->mutex == NULL){
+        *err = -1; //TODO unsure what errno to use
+        goto err2;
+      }
+
       curthread->fd[i]->refcnt = 1;
       curthread->fd[i]->status = flags & O_ACCMODE;
       curthread->fd[i]->offset = 0;
-      curthread->fd[i]->mutex = lock_create("mutex");
 
       // Return value is 0 for success
+      // TODO: Should this be the same errno?
       *err = vfs_open((char *)filename,flags,0664,&(curthread->fd[i]->file));
-      if (*err != 0){
-	return -1;
-      }
+      if (*err)
+        goto err2;
+
+      // Success
       return i;
+
+      err2:
+        kfree(curthread->fd[i]);
+      err1:
+        return -1;
     }
   }
   

@@ -47,6 +47,7 @@
 #include <addrspace.h>
 #include <mainbus.h>
 #include <vnode.h>
+#include <vfs.h>
 
 #include "opt-synchprobs.h"
 
@@ -78,8 +79,7 @@ struct lock *getpid_lock;
 /*
  * Process helper functions
  */
-//TODO: FAIL IF NO SPACE?
-static pid_t getpid(){  
+static pid_t getpid(){
   KASSERT(process_table != NULL);
   int i;
   for (i=0; i<MAX_PROCESSES; i++){
@@ -187,7 +187,7 @@ thread_create(const char *name)
 	thread->t_cwd = NULL;
 
 	/* If you add to struct thread, be sure to initialize here */
-	
+
 	/* Process fields */
 	thread->children = NULL;
 	int i;
@@ -426,14 +426,25 @@ thread_bootstrap(void)
 	 * Process table initialization
 	 */
 	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
+	if (process_table == NULL)
+		panic("thread_bootstrap: Out of memory\n");
+
 	getpid_lock = lock_create("getpid");
-	
-	// NOTE: WE ARE ASSUMING THAT THERE IS ONLY ONE THREAD RUNNING AND NO NEED FOR SYNCHRO ON PROCESS TABLE
+	if (getpid_lock == NULL)
+		panic("thread_bootstrap: getpid_lock not initialized\n");
+
+	/*
+	 * NOTE: WE ARE ASSUMING THAT THERE IS ONLY ONE THREAD RUNNING
+	 * AND NO NEED FOR SYNCHRO ON PROCESS TABLE
+	 */
 	process_table[0] = curthread;
 	curthread->pid = 0;
 	curthread->parent_pid = -1; // First process has no parent
 
 	/* Done */
+
+	// TODO: set curthread->t_cwd
+
 }
 
 /*
