@@ -450,7 +450,7 @@ thread_bootstrap(void)
 
 }
 
-void thread_std_bootstrap(void){
+void stdio_bootstrap(void){
 	/*
 	 * Open standard in/out/err file descriptors
 	 */
@@ -468,11 +468,11 @@ void thread_std_bootstrap(void){
 	struct vnode *in;
 	struct vnode *err;
 	// TODO: Why can't we set this to int?
-	vfs_open(consoleR,O_RDONLY,0664,&in);
-	vfs_open(consoleW,O_WRONLY,0664,&out);
-	vfs_open(consoleE,O_WRONLY,0664,&err);
-	// if (r1 || r2 || r3)
-	// 	panic("thread_bootstrap: could not connect to console\n");
+	int r1 = vfs_open(consoleR,O_RDONLY,0664,&in);
+	int r2 = vfs_open(consoleW,O_WRONLY,0664,&out);
+	int r3 = vfs_open(consoleE,O_WRONLY,0664,&err);
+	if (r1 | r2 | r3)
+	 	panic("thread_bootstrap: could not connect to console\n");
 
 	struct file_table *stdin = kmalloc(sizeof(struct file_table));
 	struct file_table *stdout = kmalloc(sizeof(struct file_table));
