@@ -154,7 +154,8 @@ thread_create(const char *name)
 
 	// Acquire PID
 	// NOTE: PIDS WILL BE FREED DURING REAPING
-	lock_acquire(getpid_lock);
+	if (curthread != NULL) // Avoid lock during bootstrap
+		lock_acquire(getpid_lock);
 	pid_t newpid = getpid();
 	if (newpid == -1){
 		kfree(thread);
@@ -162,7 +163,8 @@ thread_create(const char *name)
 	}
 	thread->pid = newpid;
 	process_table[newpid] = thread;
-	lock_release(getpid_lock);
+	if (curthread != NULL)
+		lock_release(getpid_lock);
 
 
 	thread->t_wchan_name = "NEW";
@@ -396,6 +398,17 @@ thread_bootstrap(void)
 	cpuarray_init(&allcpus);
 
 	/*
+	 * Process table initialization
+	 */
+	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
+	if (process_table == NULL)
+		panic("thread_bootstrap: Out of memory\n");
+
+	getpid_lock = lock_create("getpid");
+	if (getpid_lock == NULL)
+		panic("thread_bootstrap: getpid_lock not initialized\n");
+
+	/*
 	 * Create the cpu structure for the bootup CPU, the one we're
 	 * currently running on. Assume the hardware number is 0; that
 	 * might be updated later by mainbus-type code. This also
@@ -420,18 +433,6 @@ thread_bootstrap(void)
 	 */
 	curthread->t_cpu = curcpu;
 	curcpu->c_curthread = curthread;
-
-
-	/*
-	 * Process table initialization
-	 */
-	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
-	if (process_table == NULL)
-		panic("thread_bootstrap: Out of memory\n");
-
-	getpid_lock = lock_create("getpid");
-	if (getpid_lock == NULL)
-		panic("thread_bootstrap: getpid_lock not initialized\n");
 
 	/*
 	 * NOTE: WE ARE ASSUMING THAT THERE IS ONLY ONE THREAD RUNNING
