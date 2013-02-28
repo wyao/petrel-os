@@ -80,7 +80,7 @@ syscall(struct trapframe *tf)
 {
 	int callno;
 	int32_t retval;
-	int err;
+	int err = 0;
 
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
@@ -127,10 +127,6 @@ syscall(struct trapframe *tf)
 
         case SYS_dup2:
         retval = sys_dup2(tf->tf_a0,tf->tf_a1,&err);
-        break;
-
-        case SYS__exit:
-        sys__exit(tf->tf_a0);
         break;
 
 	    default:
