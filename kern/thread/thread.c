@@ -48,6 +48,8 @@
 #include <mainbus.h>
 #include <vnode.h>
 #include <vfs.h>
+#include <kern/unistd.h>
+#include <kern/fcntl.h>
 
 #include "opt-synchprobs.h"
 
@@ -442,6 +444,61 @@ thread_bootstrap(void)
 	curthread->pid = 0;
 	curthread->parent_pid = -1; // First process has no parent
 
+	/*
+	 * Open standard in/out/err file descriptors
+	 */
+	char *consoleR = NULL;
+	char *consoleW = NULL;
+	char *consoleE = NULL;
+	consoleR = kstrdup("con:");
+	consoleW = kstrdup("con:");
+	consoleE = kstrdup("con:");
+
+	if (consoleR == NULL || consoleW == NULL || consoleE == NULL) 
+		panic("thread_bootstrap: could not connect to console\n");
+	
+	struct vnode *out, *in, *err;
+	int r1 = vfs_open(consoleR,O_RDONLY,0664,&in);
+	int r2 = vfs_open(consoleW,O_WRONLY,0664,&out);
+	int r3 = vfs_open(consoleE,O_WRONLY,0664,&err);
+	if (r1 || r2 || r3)
+		panic("thread_bootstrap: could not connect to console\n");	
+	
+	struct file_table *stdin = kmalloc(sizeof(struct file_table));
+	struct file_table *stdout = kmalloc(sizeof(struct file_table));
+	struct file_table *stderr = kmalloc(sizeof(struct file_table));
+	if (stdin == NULL || stdout == NULL || stderr == NULL)
+		panic("thread_bootstrap: out of memory\n");
+
+	stdin->status = O_RDONLY;
+	stdin->refcnt = 1;
+	stdin->offset = 0;
+	stdin->file = in;
+	stdin->mutex = lock_create("stdin");
+
+	stdout->status = O_WRONLY;
+	stdout->refcnt = 1;
+	stdout->offset = 0;
+	stdout->file = out;
+	stdout->mutex = lock_create("stdout");
+
+	stderr->status = O_WRONLY;
+	stderr->refcnt = 1;
+	stderr->offset = 0;
+	stderr->file = err;
+	stderr->mutex = lock_create("stderr");
+
+	if (stdin->mutex == NULL || stdout->mutex == NULL || stderr->mutex == NULL)
+		panic("thread_bootstrap: stdin, stdout, or stderr lock couldn't be initialized\n");
+
+	curthread->fd[STDIN_FILENO] = stdin;
+	curthread->fd[STDOUT_FILENO] = stdout;
+	curthread->fd[STDERR_FILENO] = stderr;
+
+	kfree(consoleR);
+	kfree(consoleW);
+	kfree(consoleE);
+
 	/* Done */
 
 	// TODO: set curthread->t_cwd
@@ -564,6 +621,13 @@ thread_fork(const char *name,
 	/*
 	 * Now we clone various fields from the parent thread.
 	 */
+	newthread->parent_pid = curthread->pid;
+	newthread->fd[STDIN_FILENO] = curthread->fd[STDIN_FILENO];
+	newthread->fd[STDOUT_FILENO] = curthread->fd[STDOUT_FILENO];
+	newthread->fd[STDERR_FILENO] = curthread->fd[STDERR_FILENO];
+	newthread->fd[STDIN_FILENO]->refcnt++;
+	newthread->fd[STDOUT_FILENO]->refcnt++;
+	newthread->fd[STDERR_FILENO]->refcnt++;
 
 	/* Thread subsystem fields */
 	newthread->t_cpu = curthread->t_cpu;
