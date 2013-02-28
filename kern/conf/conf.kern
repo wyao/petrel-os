@@ -432,9 +432,10 @@ optfile net	test/nettest.c
 
 
 #########################################
-#					#
-#	   Assignment 2 code		#
-#	   	      			#
+#					                    #
+#	   Assignment 2 code		        #
+#	   	      			                #
 #########################################
 
 file		syscall/io_syscalls.c
+file        syscall/waitexit_syscalls.c
