@@ -150,6 +150,7 @@ extern struct lock *getpid_lock;
 
 /* Call once during system startup to allocate data structures. */
 void thread_bootstrap(void);
+void thread_std_bootstrap(void);
 
 /* Call late in system startup to get secondary CPUs running. */
 void thread_start_cpus(void);

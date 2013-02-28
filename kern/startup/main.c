@@ -109,6 +109,7 @@ boot(void)
 	thread_bootstrap();
 	hardclock_bootstrap();
 	vfs_bootstrap();
+	thread_std_bootstrap();
 
 	/* Probe and initialize devices. Interrupts should come on. */
 	kprintf("Device probe...\n");

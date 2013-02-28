@@ -444,6 +444,13 @@ thread_bootstrap(void)
 	curthread->pid = 0;
 	curthread->parent_pid = -1; // First process has no parent
 
+	/* Done */
+
+	// TODO: set curthread->t_cwd
+
+}
+
+void thread_std_bootstrap(void){
 	/*
 	 * Open standard in/out/err file descriptors
 	 */
@@ -454,16 +461,19 @@ thread_bootstrap(void)
 	consoleW = kstrdup("con:");
 	consoleE = kstrdup("con:");
 
-	if (consoleR == NULL || consoleW == NULL || consoleE == NULL) 
+	if (consoleR == NULL || consoleW == NULL || consoleE == NULL)
 		panic("thread_bootstrap: could not connect to console\n");
-	
-	struct vnode *out, *in, *err;
-	int r1 = vfs_open(consoleR,O_RDONLY,0664,&in);
-	int r2 = vfs_open(consoleW,O_WRONLY,0664,&out);
-	int r3 = vfs_open(consoleE,O_WRONLY,0664,&err);
-	if (r1 || r2 || r3)
-		panic("thread_bootstrap: could not connect to console\n");	
-	
+
+	struct vnode *out;
+	struct vnode *in;
+	struct vnode *err;
+	// TODO: Why can't we set this to int?
+	vfs_open(consoleR,O_RDONLY,0664,&in);
+	vfs_open(consoleW,O_WRONLY,0664,&out);
+	vfs_open(consoleE,O_WRONLY,0664,&err);
+	// if (r1 || r2 || r3)
+	// 	panic("thread_bootstrap: could not connect to console\n");
+
 	struct file_table *stdin = kmalloc(sizeof(struct file_table));
 	struct file_table *stdout = kmalloc(sizeof(struct file_table));
 	struct file_table *stderr = kmalloc(sizeof(struct file_table));
@@ -498,10 +508,6 @@ thread_bootstrap(void)
 	kfree(consoleR);
 	kfree(consoleW);
 	kfree(consoleE);
-
-	/* Done */
-
-	// TODO: set curthread->t_cwd
 
 }
 
