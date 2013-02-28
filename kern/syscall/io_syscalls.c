@@ -95,22 +95,15 @@ sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
     return -1;
   }
   struct iovec iov;
-  iov.iov_ubase = buf;
-  iov.iov_len = buf_len;
-
   struct uio uio;
-  uio.uio_iov = &iov;
-  uio.uio_iovcnt = 1; //Only need one right?
-  uio.uio_segflg = UIO_USERSPACE;
-  uio.uio_offset = curthread->fd[fd]->offset;
-  uio.uio_space = curthread->t_addrspace;
 
   if (rw == O_RDONLY) {
-    uio.uio_rw = UIO_READ;  // TODO: double check return value
+    // TODO: is it valid to always set offset to 0 here?
+    uio_kinit(&iov, &uio, buf, buf_len, 0, UIO_READ);
     *err = VOP_READ(curthread->fd[fd]->file,&uio);
   }
   else {
-    uio.uio_rw = UIO_WRITE;  // TODO: double check return value
+    uio_kinit(&iov, &uio, buf, buf_len, 0, UIO_WRITE);
     *err = VOP_WRITE(curthread->fd[fd]->file,&uio);
   }
   int diff = uio.uio_offset - curthread->fd[fd]->offset;
