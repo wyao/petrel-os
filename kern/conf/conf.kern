@@ -439,3 +439,4 @@ optfile net	test/nettest.c
 
 file		syscall/io_syscalls.c
 file        syscall/waitexit_syscalls.c
+file        syscall/cwd_syscalls.c
