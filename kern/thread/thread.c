@@ -467,11 +467,10 @@ void stdio_bootstrap(void){
 	struct vnode *out;
 	struct vnode *in;
 	struct vnode *err;
-	// TODO: Why can't we set this to int?
-	int r1 = vfs_open(consoleR,O_RDONLY,0664,&in);
-	int r2 = vfs_open(consoleW,O_WRONLY,0664,&out);
-	int r3 = vfs_open(consoleE,O_WRONLY,0664,&err);
-	if (r1 | r2 | r3)
+	int r0 = vfs_open(consoleR,O_RDONLY,0664,&in);
+	int r1 = vfs_open(consoleW,O_WRONLY,0664,&out);
+	int r2 = vfs_open(consoleE,O_WRONLY,0664,&err);
+	if (r0 | r1 | r2)
 	 	panic("thread_bootstrap: could not connect to console\n");
 
 	struct file_table *stdin = kmalloc(sizeof(struct file_table));
