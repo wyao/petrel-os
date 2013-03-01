@@ -134,6 +134,7 @@ syscall(struct trapframe *tf)
         break;
 
         case SYS_chdir:
+        // TODO: Doesn't this need err?
         retval = sys_chdir((const_userptr_t)tf->tf_a0);
         break;
 
