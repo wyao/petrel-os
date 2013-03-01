@@ -80,6 +80,7 @@ struct file_table{
     int status;
     int offset;
     int refcnt;
+    int update_pos; // 0 for console, 1 for files
 
     struct lock *mutex;
     struct vnode *file;

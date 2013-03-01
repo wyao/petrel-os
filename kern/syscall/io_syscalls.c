@@ -35,6 +35,7 @@ sys_open(userptr_t filename, int flags, int *err) {
       curthread->fd[i]->refcnt = 1;
       curthread->fd[i]->status = flags & O_ACCMODE;
       curthread->fd[i]->offset = 0;
+      curthread->fd[i]->update_pos = 1;
 
       // Return value is 0 for success
       // TODO: Should this be the same errno?
@@ -97,17 +98,27 @@ sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
   struct iovec iov;
   struct uio uio;
 
+  iov.iov_ubase = buf;
+  iov.iov_len = buf_len;
+  uio.uio_iov = &iov;
+  uio.uio_iovcnt = 1;
+  uio.uio_offset = curthread->fd[fd]->offset;
+  uio.uio_resid = buf_len;
+  uio.uio_segflg = UIO_USERSPACE;
+  uio.uio_space = curthread->t_addrspace;
+
   if (rw == O_RDONLY) {
-    // TODO: is it valid to always set offset to 0 here?
-    uio_kinit(&iov, &uio, buf, buf_len, 0, UIO_READ);
+    uio.uio_rw = UIO_READ;
     *err = VOP_READ(curthread->fd[fd]->file,&uio);
   }
   else {
-    uio_kinit(&iov, &uio, buf, buf_len, 0, UIO_WRITE);
+    uio.uio_rw = UIO_WRITE;
     *err = VOP_WRITE(curthread->fd[fd]->file,&uio);
   }
   int diff = uio.uio_offset - curthread->fd[fd]->offset;
-  curthread->fd[fd]->offset = uio.uio_offset;  //TODO: double check this - should be new offset after read
+
+  if (curthread->fd[fd]->update_pos)
+    curthread->fd[fd]->offset = uio.uio_offset;  //TODO: double check this - should be new offset after read
 
   lock_release(curthread->fd[fd]->mutex);
   return diff;

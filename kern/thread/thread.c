@@ -483,18 +483,21 @@ void stdio_bootstrap(void){
 	stdin->refcnt = 1;
 	stdin->offset = 0;
 	stdin->file = in;
+	stdin->update_pos = 0;
 	stdin->mutex = lock_create("stdin");
 
 	stdout->status = O_WRONLY;
 	stdout->refcnt = 1;
 	stdout->offset = 0;
 	stdout->file = out;
+	stdout->update_pos = 0;
 	stdout->mutex = lock_create("stdout");
 
 	stderr->status = O_WRONLY;
 	stderr->refcnt = 1;
 	stderr->offset = 0;
 	stderr->file = err;
+	stderr->update_pos = 0;
 	stderr->mutex = lock_create("stderr");
 
 	if (stdin->mutex == NULL || stdout->mutex == NULL || stderr->mutex == NULL)
