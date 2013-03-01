@@ -108,6 +108,7 @@ sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
   uio.uio_space = curthread->t_addrspace;
 
   if (rw == O_RDONLY) {
+    //uio_kinit(&iov, &uio, buf, buf_len, curthread->fd[fd]->offset, UIO_READ);
     uio.uio_rw = UIO_READ;
     *err = VOP_READ(curthread->fd[fd]->file,&uio);
   }
