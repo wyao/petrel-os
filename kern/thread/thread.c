@@ -973,6 +973,11 @@ thread_exit(void)
 	/* Interrupts off on this processor */
 	splhigh();
 	thread_switch(S_ZOMBIE, NULL);
+
+	lock_acquire(cur->cv_lock);
+	cv_signal(cur->waiting_on,cur->cv_lock);
+	lock_release(cur->cv_lock);
+	
 	panic("The zombie walks!\n");
 }
 
