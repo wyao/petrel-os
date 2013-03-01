@@ -24,7 +24,7 @@ main(int argc, char *argv[])
     write(2, "open failed\n", 12);
     return -1;
   }
-  printf("file pointer %d\n opened for writing\n", fd);
+  printf("file pointer %d\nopened for writing\n", fd);
   if (write(fd, "This will be output to testfile.txt\n", 36) != 36) {
       write(2, "There was an error writing to testfile.txt\n", 43);
       return -1;
@@ -40,7 +40,7 @@ main(int argc, char *argv[])
     write(2, "open2 failed\n", 13);
     return -1;
   }
-  printf("file pointer %d\n opened for reading\n", fd);
+  printf("file pointer %d\nopened for reading\n", fd);
   char buffer[4];
   while (read(fd, buffer, 4) != 0){
     printf("%s", buffer);
