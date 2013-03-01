@@ -139,6 +139,9 @@ struct thread {
 
 	struct pid_list *children;
 	struct file_table *fd[MAX_FILE_DESCRIPTOR];
+
+	struct cv *waiting_on;
+	struct lock *cv_lock;
 };
 
 

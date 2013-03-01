@@ -198,6 +198,9 @@ thread_create(const char *name)
 	for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
 		thread->fd[i] = NULL;
 
+	thread->waiting_on = cv_create("cv");
+	thread->cv_lock = lock_create("lock");
+
 	return thread;
 }
 
@@ -289,6 +292,8 @@ thread_destroy(struct thread *thread)
 	 * If you add things to struct thread, be sure to clean them up
 	 * either here or in thread_exit(). (And not both...)
 	 */
+	lock_destroy(thread->cv_lock);
+	cv_destroy(thread->waiting_on);
 
 	/* VFS fields, cleaned up in thread_exit */
 	KASSERT(thread->t_cwd == NULL);
