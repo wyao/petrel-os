@@ -974,6 +974,9 @@ thread_exit(void)
 	splhigh();
 	thread_switch(S_ZOMBIE, NULL);
 
+	// TODO: Pretty sure thread switch doesn't return control;
+	// need mutual exclusion on setting state to ZOMBIE before
+	// we signal
 	lock_acquire(cur->cv_lock);
 	cv_signal(cur->waiting_on,cur->cv_lock);
 	lock_release(cur->cv_lock);
