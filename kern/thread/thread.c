@@ -77,20 +77,6 @@ struct thread **process_table;
 struct lock *getpid_lock;
 
 
-////////////////////////////////////////////////////////////
-/*
- * Process helper functions
- */
-static pid_t getpid(){
-  KASSERT(process_table != NULL);
-  int i;
-  for (i=0; i<MAX_PROCESSES; i++){
-  	if (process_table[i] == NULL)
-  		return (pid_t)i;
-  }
-  return -1; // No pids available
-}
-
 
 ////////////////////////////////////////////////////////////
 
@@ -153,21 +139,6 @@ thread_create(const char *name)
 		kfree(thread);
 		return NULL;
 	}
-
-	// Acquire PID
-	// NOTE: PIDS WILL BE FREED DURING REAPING
-	if (curthread != NULL) // Avoid lock during bootstrap
-		lock_acquire(getpid_lock);
-	pid_t newpid = getpid();
-	if (newpid == -1){
-		kfree(thread);
-		return NULL;
-	}
-	thread->pid = newpid;
-	process_table[newpid] = thread;
-	if (curthread != NULL)
-		lock_release(getpid_lock);
-
 
 	thread->t_wchan_name = "NEW";
 	thread->t_state = S_READY;
@@ -448,6 +419,10 @@ thread_bootstrap(void)
 	process_table[0] = curthread;
 	curthread->pid = 0;
 	curthread->parent_pid = -1; // First process has no parent
+
+	curthread->fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(file_table *));
+	if (curthread->fd == NULL)
+		panic("thread_bootstrap: Out of memory\n");
 
 	/* Done */
 

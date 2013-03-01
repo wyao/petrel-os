@@ -68,6 +68,7 @@ int sys_chdir(const_userptr_t pathname);
 int sys___getcwd(userptr_t buf, size_t buflen, int *err);
 pid_t sys_getpid(void);
 pid_t sys_waitpid(pid_t pid, int *status, int options, int *err);
+pid_t sys_fork(trapframe *tf, int *err);
 
 #endif /* _SYSCALL_H_ */
 
