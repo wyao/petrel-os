@@ -15,9 +15,10 @@
 #include <mips/trapframe.h>
 
 struct init_data{
-  struct sempahore *wait_on_child;
-  struct sempahore *wait_on_parent;
+  struct semaphore *wait_on_child;
+  struct semaphore *wait_on_parent;
   struct trapframe *child_tf;
+  struct addrspace *child_as;
 };
 
 static 
@@ -34,17 +35,21 @@ getpid(){
 
 static
 void
-child_init(init_data *s, unsigned long n){
+child_init(void *p, unsigned long n){
   (void)n;
+  struct init_data *s = (struct init_data *)p;
   P(s->wait_on_parent);
 
-  struct trapframe tf = s->child_tf;
+  struct trapframe tf = *(s->child_tf);
+  as_activate(s->child_as);
 
-  V(s->wait_on_child); //TODO: Is this right?
+  V(s->wait_on_child);
+
+  mips_usermode(&tf);
 }
 
 
-pid_t sys_fork(trapframe *tf, int *err){
+pid_t sys_fork(struct trapframe *tf, int *err){
 
   // Acquire and reserve child pid
   lock_acquire(getpid_lock);
@@ -74,12 +79,12 @@ pid_t sys_fork(trapframe *tf, int *err){
     goto err4;
   }
 
-  // Copy the parent trapframe(?) TODO: WHY?
-  struct trapframe child_tf = tf;
-  s->child_tf = child_tf;
+  // Copy trapframe from parent's stack
+  struct trapframe child_tf = *tf;
+  s->child_tf = &child_tf;
 
   // Copy the parent file descriptors
-  struct child_fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(struct file_table *));
+  struct file_table **child_fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(struct file_table *));
   if (child_fd == NULL){
     *err = ENOMEM;
     goto err5;
@@ -96,6 +101,7 @@ pid_t sys_fork(trapframe *tf, int *err){
     *err = ENOMEM;
     goto err6;
   }
+  s->child_as = child_as;
 
   // Create lock and cv for the child process
   struct lock *child_cv_lock = lock_create("cv_lock");
@@ -110,7 +116,7 @@ pid_t sys_fork(trapframe *tf, int *err){
   }
 
   // Create a pid_list entry for the parent
-  struct pid_list new_child_pidlist = kmalloc(sizeof(struct pid_list));
+  struct pid_list *new_child_pidlist = kmalloc(sizeof(struct pid_list));
   if (new_child_pidlist == NULL){
     *err = ENOMEM;
     goto err9;
@@ -118,7 +124,7 @@ pid_t sys_fork(trapframe *tf, int *err){
 
   //TODO: Give child name?
 
-  struct *child_thread;
+  struct thread *child_thread;
 
   *err = thread_fork("child", child_init, s, 0, &child_thread);
   if (*err){
@@ -127,6 +133,8 @@ pid_t sys_fork(trapframe *tf, int *err){
 
   // Copy process field from parent to child
 
+
+  // Free init_data
 
   // Error cleanup
   err9:
@@ -138,9 +146,9 @@ pid_t sys_fork(trapframe *tf, int *err){
   err6:
     kfree(child_fd);
   err5:
-    sempahore_destroy(s->wait_on_parent);
+    sem_destroy(s->wait_on_parent);
   err4:
-    sempahore_destroy(s->wait_on_child);
+    sem_destroy(s->wait_on_child);
   err3:
     kfree(s);
   err2:
