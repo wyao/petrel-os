@@ -163,14 +163,16 @@ thread_create(const char *name)
 
 	/* If you add to struct thread, be sure to initialize here */
 
-	/* Process fields */
+	/* Process fields (everything except pid) */
 	thread->children = NULL;
+
+	thread->fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(struct file_table *));
+	if (thread->fd == NULL)
+		panic("thread_bootstrap: Out of memory\n");
+
 	int i;
 	for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
 		thread->fd[i] = NULL;
-
-	thread->waiting_on = cv_create("cv");
-	thread->cv_lock = lock_create("lock");
 
 	return thread;
 }
@@ -263,8 +265,7 @@ thread_destroy(struct thread *thread)
 	 * If you add things to struct thread, be sure to clean them up
 	 * either here or in thread_exit(). (And not both...)
 	 */
-	lock_destroy(thread->cv_lock);
-	cv_destroy(thread->waiting_on);
+	// TODO more cleanup
 
 	/* VFS fields, cleaned up in thread_exit */
 	KASSERT(thread->t_cwd == NULL);
@@ -382,10 +383,6 @@ thread_bootstrap(void)
 	if (process_table == NULL)
 		panic("thread_bootstrap: Out of memory\n");
 
-	getpid_lock = lock_create("getpid");
-	if (getpid_lock == NULL)
-		panic("thread_bootstrap: getpid_lock not initialized\n");
-
 	/*
 	 * Create the cpu structure for the bootup CPU, the one we're
 	 * currently running on. Assume the hardware number is 0; that
@@ -412,22 +409,7 @@ thread_bootstrap(void)
 	curthread->t_cpu = curcpu;
 	curcpu->c_curthread = curthread;
 
-	/*
-	 * NOTE: WE ARE ASSUMING THAT THERE IS ONLY ONE THREAD RUNNING
-	 * AND NO NEED FOR SYNCHRO ON PROCESS TABLE
-	 */
-	process_table[0] = curthread;
-	curthread->pid = 0;
-	curthread->parent_pid = -1; // First process has no parent
-
-	curthread->fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(file_table *));
-	if (curthread->fd == NULL)
-		panic("thread_bootstrap: Out of memory\n");
-
 	/* Done */
-
-	// TODO: set curthread->t_cwd
-
 }
 
 void stdio_bootstrap(void){
@@ -618,17 +600,6 @@ thread_fork(const char *name,
 		return ENOMEM;
 	}
 	thread_checkstack_init(newthread);
-
-	/*
-	 * Now we clone various fields from the parent thread.
-	 */
-	newthread->parent_pid = curthread->pid;
-	newthread->fd[STDIN_FILENO] = curthread->fd[STDIN_FILENO];
-	newthread->fd[STDOUT_FILENO] = curthread->fd[STDOUT_FILENO];
-	newthread->fd[STDERR_FILENO] = curthread->fd[STDERR_FILENO];
-	newthread->fd[STDIN_FILENO]->refcnt++;
-	newthread->fd[STDOUT_FILENO]->refcnt++;
-	newthread->fd[STDERR_FILENO]->refcnt++;
 
 	/* Thread subsystem fields */
 	newthread->t_cpu = curthread->t_cpu;
@@ -952,9 +923,9 @@ thread_exit(void)
 	// TODO: Pretty sure thread switch doesn't return control;
 	// need mutual exclusion on setting state to ZOMBIE before
 	// we signal
-	lock_acquire(cur->cv_lock);
-	cv_signal(cur->waiting_on,cur->cv_lock);
-	lock_release(cur->cv_lock);
+	// lock_acquire(cur->cv_lock);
+	// cv_signal(cur->waiting_on,cur->cv_lock);
+	// lock_release(cur->cv_lock);
 	
 	panic("The zombie walks!\n");
 }

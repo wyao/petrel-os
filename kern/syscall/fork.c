@@ -50,6 +50,7 @@ child_init(void *p, unsigned long n){
 
 
 pid_t sys_fork(struct trapframe *tf, int *err){
+  int i;
 
   // Acquire and reserve child pid
   lock_acquire(getpid_lock);
@@ -89,7 +90,6 @@ pid_t sys_fork(struct trapframe *tf, int *err){
     *err = ENOMEM;
     goto err5;
   }
-  int i;
   for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
     child_fd[i] = curthread->fd[i];
   // TODO: after child is initialized, we need to increment all the reference counts for the file_table structs
@@ -132,7 +132,13 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   }
 
   // Copy process field from parent to child
-
+  child_thread->parent_pid = curthread->pid;
+  child_thread->fd = child_fd;
+  for (i=0; i<MAX_FILE_DESCRIPTOR; i++){
+    if (child_thread->fd[i] != NULL){
+      child_thread->fd[i]->refcnt++;
+    }
+  }
 
   // Free init_data
 
