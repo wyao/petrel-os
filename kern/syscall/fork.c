@@ -18,7 +18,6 @@ struct init_data{
   struct semaphore *wait_on_child;
   struct semaphore *wait_on_parent;
   struct trapframe *child_tf;
-  struct addrspace *child_as;
 };
 
 static 
@@ -41,7 +40,8 @@ child_init(void *p, unsigned long n){
   P(s->wait_on_parent);
 
   struct trapframe tf = *(s->child_tf);
-  as_activate(s->child_as);
+  tf.tf_v0 = 0;
+  as_activate(curthread->t_addrspace); //TODO: HOW TO CHECK IF SUCCESS?
 
   V(s->wait_on_child);
 
@@ -84,24 +84,13 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   struct trapframe child_tf = *tf;
   s->child_tf = &child_tf;
 
-  // Copy the parent file descriptors
-  struct file_table **child_fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(struct file_table *));
-  if (child_fd == NULL){
-    *err = ENOMEM;
-    goto err5;
-  }
-  for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
-    child_fd[i] = curthread->fd[i];
-  // TODO: after child is initialized, we need to increment all the reference counts for the file_table structs
-
   // Copy the parent address space
   struct addrspace *child_as;
   *err = as_copy(curthread->t_addrspace, &child_as);
   if (*err){
     *err = ENOMEM;
-    goto err6;
+    goto err5;
   }
-  s->child_as = child_as;
 
   // Create lock and cv for the child process
   struct lock *child_cv_lock = lock_create("cv_lock");
@@ -121,36 +110,57 @@ pid_t sys_fork(struct trapframe *tf, int *err){
     *err = ENOMEM;
     goto err9;
   }
-
-  //TODO: Give child name?
+  //TODO: upon success of thread_fork, add this to parent's child_list (when?)
 
   struct thread *child_thread;
 
   *err = thread_fork("child", child_init, s, 0, &child_thread);
   if (*err){
-
+    goto err10;
   }
 
-  // Copy process field from parent to child
+  // Populate child thread with allocated fields and those copied from parent
   child_thread->parent_pid = curthread->pid;
-  child_thread->fd = child_fd;
   for (i=0; i<MAX_FILE_DESCRIPTOR; i++){
     if (child_thread->fd[i] != NULL){
+      child_thread->fd[i] = curthread->fd[i];
       child_thread->fd[i]->refcnt++;
     }
   }
+  child_thread->waiting_on = child_waiting_on;
+  child_thread->cv_lock = child_cv_lock;
+  child_thread->t_addrspace = child_as;
+  child_thread->t_cwd = curthread->t_cwd;
+  VOP_INCREF(child_thread->t_cwd); // TODO: do we need to do this?
+  child_thread->pid = childpid;
+  child_thread->parent_pid = curthread->pid;
+  // TODO: other setup?
+  
+  V(s->wait_on_parent);
+  P(s->wait_on_child);
 
-  // Free init_data
+  // TODO: Check if child was successful?
+  // Insert child's PID into head of parents list
+  new_child_pidlist->next = curthread->children;
+  curthread->children = new_child_pidlist;
+  process_table[childpid] = child_thread;
+
+  // Free init_data (child is done)
+  sem_destroy(s->wait_on_parent);
+  sem_destroy(s->wait_on_child);
+  kfree(s);
+
+  return childpid;
 
   // Error cleanup
+  err10:
+    kfree(new_child_pidlist);
   err9:
     cv_destroy(child_waiting_on);
   err8:
     lock_destroy(child_cv_lock);
   err7:
     as_destroy(child_as);
-  err6:
-    kfree(child_fd);
   err5:
     sem_destroy(s->wait_on_parent);
   err4:
