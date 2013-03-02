@@ -78,7 +78,7 @@ struct pid_list{
 /* File table */
 struct file_table{
     int status;
-    int offset;
+    off_t offset;
     int refcnt;
     int update_pos; // 0 for console, 1 for files
 

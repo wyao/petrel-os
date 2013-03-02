@@ -63,6 +63,7 @@ int sys_read(int fd, userptr_t buf, size_t buf_len, int *err);
 int sys_write(int fd, userptr_t buf, size_t nbytes, int *err);
 int sys_rw(int fd, userptr_t buf, size_t nbytes, int *err, int rw);
 int sys_dup2(int oldfd, int newfd, int *err);
+off_t sys_lseek(int fd,off_t pos, int whence, int *err);
 void sys__exit(int exitcode);
 int sys_chdir(const_userptr_t pathname);
 int sys___getcwd(userptr_t buf, size_t buflen, int *err);

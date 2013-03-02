@@ -11,6 +11,7 @@
 #include <current.h>
 #include <kern/iovec.h>
 #include <uio.h>
+#include <kern/seek.h>
 
 int
 sys_open(userptr_t filename, int flags, int *err) {
@@ -160,4 +161,35 @@ sys_dup2(int oldfd, int newfd, int *err){
   }
   curthread->fd[newfd] = curthread->fd[oldfd];
   return newfd;
+}
+
+off_t 
+sys_lseek(int fd,off_t pos, int whence, int *err){
+  if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END){
+    *err = EINVAL;
+    return -1;
+  }
+  if (curthread->fd[fd] == NULL){
+    *err = EBADF;
+    return -1;
+  }
+  lock_acquire(curthread->fd[fd]->mutex);
+  if (curthread->fd[fd]->update_pos == 0){
+    *err = ESPIPE;
+    lock_release(curthread->fd[fd]->mutex);
+    return -1;
+  }
+  if (curthread->fd[fd]->offset+pos < 0){
+    *err = EINVAL;
+    lock_release(curthread->fd[fd]->mutex);
+    return -1;
+  }
+  if (!VOP_TRYSEEK(curthread->fd[fd]->file,curthread->fd[fd]->offset+pos)){
+    *err = EINVAL;
+    lock_release(curthread->fd[fd]->mutex);
+    return -1;
+  }
+  curthread->fd[fd]->offset = curthread->fd[fd]->offset+pos;
+  lock_release(curthread->fd[fd]->mutex);
+  return curthread->fd[fd]->offset;
 }

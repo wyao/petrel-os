@@ -302,7 +302,8 @@ exorcise(void)
 	while ((z = threadlist_remhead(&curcpu->c_zombies)) != NULL) {
 		KASSERT(z != curthread);
 		KASSERT(z->t_state == S_ZOMBIE);
-		thread_destroy(z);
+		if (!z->parent_pid > 0)  // ONLY REAP ZOMBIES WITHOUT PARENTS
+			thread_destroy(z);
 	}
 }
 
@@ -893,6 +894,9 @@ thread_exit(void)
 
 	cur = curthread;
 
+	// File descriptors
+	kfree(cur->fd);
+
 	/* VFS fields */
 	if (cur->t_cwd) {
 		VOP_DECREF(cur->t_cwd);
@@ -918,14 +922,13 @@ thread_exit(void)
 
 	/* Interrupts off on this processor */
 	splhigh();
+	// Signal parent
+	if (cur->parent_pid > 0) {
+		lock_acquire(cur->cv_lock);
+		cv_signal(cur->waiting_on,cur->cv_lock);
+		lock_release(cur->cv_lock);
+	}
 	thread_switch(S_ZOMBIE, NULL);
-
-	// TODO: Pretty sure thread switch doesn't return control;
-	// need mutual exclusion on setting state to ZOMBIE before
-	// we signal
-	// lock_acquire(cur->cv_lock);
-	// cv_signal(cur->waiting_on,cur->cv_lock);
-	// lock_release(cur->cv_lock);
 	
 	panic("The zombie walks!\n");
 }
