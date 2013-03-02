@@ -140,8 +140,7 @@ struct thread {
 	struct pid_list *children;
 	struct file_table **fd;
 
-	struct cv *waiting_on;
-	struct lock *cv_lock;
+	struct semaphore *waiting_on;
 };
 
 

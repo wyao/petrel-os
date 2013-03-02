@@ -11,8 +11,6 @@ void
 sys__exit(int exitcode){
 	struct pid_list *tmp;
 
-	lock_acquire(curthread->cv_lock);  // Released in thread_exit
-
 	while(curthread->children != NULL) {
 		tmp = curthread->children;
 		process_table[tmp->pid]->parent_pid = -1; // Mark children as orphans
@@ -52,14 +50,10 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 		*err = ECHILD;
 		return -1;
 	}
-	// Then check if the child is already a zombie - if so, store its exit status in status, destroy it, and return
-	// If the parent acquires this lock first, child will wait to exit.  Otherwise, by the time the child releases
-	// the lock it will have completely exited.
-	lock_acquire(process_table[pid]->cv_lock);
-	if (process_table[pid]->t_state != S_ZOMBIE) {
-		cv_wait(process_table[pid]->waiting_on,process_table[pid]->cv_lock);
-	}
-	lock_release(process_table[pid]->cv_lock);
+	// The child will only V this semaphore in thread_exit with interrupts off, just before it switches to zombie.
+	// Thus, the parent will only proceed after a child has completely exited
+	P(process_table[pid]->waiting_on);
+
 	// Remove pid from list of children
 	struct pid_list *curr = curthread->children;
 	while (curr != NULL){
@@ -70,8 +64,7 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 		}
 	}
 
-	lock_destroy(process_table[pid]->cv_lock);
-	cv_destroy(process_table[pid]->waiting_on);	
+	sem_destroy(process_table[pid]->waiting_on);	
 	*status = process_table[pid]->exit_status;
 	process_table[pid]->parent_pid = -1; // Mark for reaping by exorcise
 	process_table[pid] = NULL;

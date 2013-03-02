@@ -94,13 +94,8 @@ pid_t sys_fork(struct trapframe *tf, int *err){
     goto err5;
   }
 
-  // Create lock and cv for the child process
-  struct lock *child_cv_lock = lock_create("cv_lock");
-  if (child_cv_lock == NULL){
-    *err = ENOMEM;
-    goto err7;
-  }
-  struct cv *child_waiting_on = cv_create("waiting_on");
+  // Create semaphore for the child process
+  struct semaphore *child_waiting_on = sem_create("waiting_on",0);
   if (child_waiting_on == NULL){
     *err = ENOMEM;
     goto err8;
@@ -130,7 +125,6 @@ pid_t sys_fork(struct trapframe *tf, int *err){
     }
   }
   child_thread->waiting_on = child_waiting_on;
-  child_thread->cv_lock = child_cv_lock;
   child_thread->t_addrspace = child_as;
   child_thread->t_cwd = curthread->t_cwd;
   VOP_INCREF(child_thread->t_cwd); // TODO: do we need to do this?
@@ -159,10 +153,8 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   err10:
     kfree(new_child_pidlist);
   err9:
-    cv_destroy(child_waiting_on);
+    sem_destroy(child_waiting_on);
   err8:
-    lock_destroy(child_cv_lock);
-  err7:
     as_destroy(child_as);
   err5:
     sem_destroy(s->wait_on_parent);
