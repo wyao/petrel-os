@@ -44,6 +44,82 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <synch.h>
+#include <kern/unistd.h>
+
+static void
+stdio_init(){
+		char *consoleR = NULL;
+	char *consoleW = NULL;
+	char *consoleE = NULL;
+	consoleR = kstrdup("con:");
+	consoleW = kstrdup("con:");
+	consoleE = kstrdup("con:");
+
+	if (consoleR == NULL || consoleW == NULL || consoleE == NULL)
+		panic("thread_bootstrap: could not connect to console\n");
+
+	struct vnode *out;
+	struct vnode *in;
+	struct vnode *err;
+	int r0 = vfs_open(consoleR,O_RDONLY,0664,&in);
+	int r1 = vfs_open(consoleW,O_WRONLY,0664,&out);
+	int r2 = vfs_open(consoleE,O_WRONLY,0664,&err);
+	if (r0 | r1 | r2)
+	 	panic("thread_bootstrap: could not connect to console\n");
+
+	struct file_table *stdin = kmalloc(sizeof(struct file_table));
+	struct file_table *stdout = kmalloc(sizeof(struct file_table));
+	struct file_table *stderr = kmalloc(sizeof(struct file_table));
+	if (stdin == NULL || stdout == NULL || stderr == NULL)
+		panic("thread_bootstrap: out of memory\n");
+
+	stdin->status = O_RDONLY;
+	stdin->refcnt = 1;
+	stdin->offset = 0;
+	stdin->file = in;
+	stdin->update_pos = 0;
+	stdin->mutex = lock_create("stdin");
+
+	stdout->status = O_WRONLY;
+	stdout->refcnt = 1;
+	stdout->offset = 0;
+	stdout->file = out;
+	stdout->update_pos = 0;
+	stdout->mutex = lock_create("stdout");
+
+	stderr->status = O_WRONLY;
+	stderr->refcnt = 1;
+	stderr->offset = 0;
+	stderr->file = err;
+	stderr->update_pos = 0;
+	stderr->mutex = lock_create("stderr");
+
+	if (stdin->mutex == NULL || stdout->mutex == NULL || stderr->mutex == NULL)
+		panic("thread_bootstrap: stdin, stdout, or stderr lock couldn't be initialized\n");
+
+	curthread->fd[STDIN_FILENO] = stdin;
+	curthread->fd[STDOUT_FILENO] = stdout;
+	curthread->fd[STDERR_FILENO] = stderr;
+
+	kfree(consoleR);
+	kfree(consoleW);
+	kfree(consoleE);
+
+	/*
+	 * Set current working directory to root
+	 */
+	char *root = NULL;
+	struct vnode *rootdir;
+	root = kstrdup("emu0:/");
+	if (root == NULL)
+		panic("stdio_init: couldnt get root directory\n");
+	int result = vfs_open(root,O_RDONLY,0664,&rootdir);
+	if (result)
+		panic("stdio_init: couldnt get root directory\n");
+	curthread->t_cwd = rootdir;
+	kfree(root);
+}
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -57,6 +133,8 @@ runprogram(char *progname)
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
+
+	stdio_init();
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
