@@ -9,9 +9,10 @@
 
 void
 sys__exit(int exitcode){
-	(void)exitcode;
-
 	struct pid_list *tmp;
+
+	lock_acquire(curthread->cv_lock);  // Released in thread_exit
+
 	while(curthread->children != NULL) {
 		tmp = curthread->children;
 		process_table[tmp->pid]->parent_pid = -1; // Mark children as orphans
@@ -52,12 +53,13 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 		return -1;
 	}
 	// Then check if the child is already a zombie - if so, store its exit status in status, destroy it, and return
-	// TODO: MUST LOCK STATUS CHANGES, OTHERWISE CHILD MIGHT EXIT DURING THIS CHECK
+	// If the parent acquires this lock first, child will wait to exit.  Otherwise, by the time the child releases
+	// the lock it will have completely exited.
+	lock_acquire(process_table[pid]->cv_lock);
 	if (process_table[pid]->t_state != S_ZOMBIE) {
-		lock_acquire(process_table[pid]->cv_lock);
 		cv_wait(process_table[pid]->waiting_on,process_table[pid]->cv_lock);
-		lock_release(process_table[pid]->cv_lock);
 	}
+	lock_release(process_table[pid]->cv_lock);
 	// Remove pid from list of children
 	struct pid_list *curr = curthread->children;
 	while (curr != NULL){

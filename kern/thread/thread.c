@@ -929,7 +929,7 @@ thread_exit(void)
 	splhigh();
 	// Signal parent
 	if (cur->parent_pid > 0) {
-		lock_acquire(cur->cv_lock);
+		//lock_acquire(cur->cv_lock); // Lock now acquired in sys_wait to fix 'parent waits, child exits' synchro
 		cv_signal(cur->waiting_on,cur->cv_lock);
 		lock_release(cur->cv_lock);
 	}
