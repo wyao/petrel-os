@@ -384,6 +384,11 @@ thread_bootstrap(void)
 	if (process_table == NULL)
 		panic("thread_bootstrap: Out of memory\n");
 
+	// pid table lock
+	getpid_lock = lock_create("getpid_lock");
+	if (getpid_lock == NULL)
+		panic("thread_bootstrap: Out of memory\n");
+
 	/*
 	 * Create the cpu structure for the bootup CPU, the one we're
 	 * currently running on. Assume the hardware number is 0; that

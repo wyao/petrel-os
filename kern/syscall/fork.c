@@ -42,7 +42,7 @@ child_init(void *p, unsigned long n){
   struct trapframe tf = *(s->child_tf);
   tf.tf_v0 = 0;
   tf.tf_epc += 4; // Advance program counter
-  as_activate(curthread->t_addrspace); //TODO: HOW TO CHECK IF SUCCESS?
+  as_activate(curthread->t_addrspace);
 
   V(s->wait_on_child);
 
@@ -143,6 +143,7 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   // TODO: Check if child was successful?
   // Insert child's PID into head of parents list
   new_child_pidlist->next = curthread->children;
+  new_child_pidlist->pid = childpid;
   curthread->children = new_child_pidlist;
   process_table[childpid] = child_thread;
 
