@@ -184,7 +184,7 @@ sys_lseek(int fd,off_t pos, int whence, int *err){
     lock_release(curthread->fd[fd]->mutex);
     return -1;
   }
-  if (!VOP_TRYSEEK(curthread->fd[fd]->file,curthread->fd[fd]->offset+pos)){
+  if (VOP_TRYSEEK(curthread->fd[fd]->file,curthread->fd[fd]->offset+pos)){
     *err = EINVAL;
     lock_release(curthread->fd[fd]->mutex);
     return -1;
