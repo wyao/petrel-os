@@ -13,6 +13,7 @@
 #include <uio.h>
 #include <addrspace.h>
 #include <mips/trapframe.h>
+#include <limit.h>
 
 struct init_data{
   struct semaphore *wait_on_child;
@@ -25,7 +26,7 @@ pid_t
 getpid(){
   KASSERT(process_table != NULL);
   int i;
-  for (i=0; i<MAX_PROCESSES; i++){
+  for (i=PID_MIN; i<MAX_PROCESSES; i++){
     if (process_table[i] == NULL)
       return (pid_t)i;
   }

@@ -928,7 +928,7 @@ thread_exit(void)
 	/* Interrupts off on this processor */
 	splhigh();
 	// Signal parent
-	if (cur->parent_pid > 0) {
+	if (cur->parent_pid >= PID_MIN) {
 		V(cur->waiting_on);
 	}
 	thread_switch(S_ZOMBIE, NULL);
