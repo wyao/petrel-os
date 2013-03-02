@@ -141,6 +141,10 @@ syscall(struct trapframe *tf)
         	tf->tf_v1 = retval2;
         break;
 
+        case SYS_execv:
+        retval = sys_execv((userptr_t)tf->tf_a0, (userptr_t)tf->tf_a1);
+        break;
+
         case SYS__exit:
         sys__exit(tf->tf_a0);
         break;
