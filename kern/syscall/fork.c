@@ -41,6 +41,7 @@ child_init(void *p, unsigned long n){
 
   struct trapframe tf = *(s->child_tf);
   tf.tf_v0 = 0;
+  tf.tf_epc += 4; // Advance program counter
   as_activate(curthread->t_addrspace); //TODO: HOW TO CHECK IF SUCCESS?
 
   V(s->wait_on_child);
