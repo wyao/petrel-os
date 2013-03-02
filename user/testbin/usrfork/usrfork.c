@@ -8,12 +8,17 @@ main(int argc, char *argv[])
   (void)argc;
   (void)argv;
 
-  if (fork() == 0) {
-    printf("Hello from child\n");
+  int pid = fork();
+  switch (pid){
+    case 0:
+        printf("Hello from child\n");
+        break;
+    case -1:
+        printf("ERROR\n");
+        return -1;
+        break;
+    default:
+        printf("Hello from parent\n");
   }
-  else {
-    printf("Hello from parent\n");
-  }
-
   return 0;
 }

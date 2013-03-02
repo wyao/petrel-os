@@ -41,6 +41,7 @@ child_init(void *p, unsigned long n){
 
   struct trapframe tf = *(s->child_tf);
   tf.tf_v0 = 0;
+  tf.tf_v1 = 0;
   tf.tf_epc += 4; // Advance program counter
   as_activate(curthread->t_addrspace);
 
@@ -123,7 +124,7 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   // Populate child thread with allocated fields and those copied from parent
   child_thread->parent_pid = curthread->pid;
   for (i=0; i<MAX_FILE_DESCRIPTOR; i++){
-    if (child_thread->fd[i] != NULL){
+    if (curthread->fd[i] != NULL){
       child_thread->fd[i] = curthread->fd[i];
       child_thread->fd[i]->refcnt++;
     }
