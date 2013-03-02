@@ -55,12 +55,21 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 	P(process_table[pid]->waiting_on);
 
 	// Remove pid from list of children
+	// Check head of list
 	struct pid_list *curr = curthread->children;
-	while (curr != NULL){
-		if (curr->next == tmp){
-			curr->next = tmp->next;
-			kfree(tmp);
-			break;
+	if (curr->pid == pid){
+		curthread->children = curr->next;
+		kfree(curr);
+	}
+	else{
+		while (curr->next != NULL){
+			if (curr->next->pid == pid){
+				tmp = curr->next;
+				curr->next = curr->next->next;
+				kfree(tmp);
+				break;
+			}
+			curr = curr->next;
 		}
 	}
 

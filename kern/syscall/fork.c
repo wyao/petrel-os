@@ -13,7 +13,7 @@
 #include <uio.h>
 #include <addrspace.h>
 #include <mips/trapframe.h>
-#include <limit.h>
+#include <limits.h>
 
 struct init_data{
   struct semaphore *wait_on_child;

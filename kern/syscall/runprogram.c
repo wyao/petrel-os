@@ -46,10 +46,11 @@
 #include <test.h>
 #include <synch.h>
 #include <kern/unistd.h>
+#include <limits.h>
 
 static void
 stdio_init(){
-		char *consoleR = NULL;
+	char *consoleR = NULL;
 	char *consoleW = NULL;
 	char *consoleE = NULL;
 	consoleR = kstrdup("con:");
@@ -133,6 +134,10 @@ runprogram(char *progname)
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
+
+	// TODO: HACK
+	KASSERT(process_table[PID_MIN] == NULL);
+	curthread->pid = PID_MIN;
 
 	stdio_init();
 
