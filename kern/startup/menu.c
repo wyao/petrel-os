@@ -40,6 +40,7 @@
 #include <sfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <synch.h>
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
@@ -122,25 +123,30 @@ cmd_progthread(void *ptr, unsigned long nargs)
  * array and strings, until you do this a race condition exists
  * between that code and the menu input code.
  */
+
 static
 int
 common_prog(int nargs, char **args)
 {
 	int result;
+	struct thread *thread;
 
 #if OPT_SYNCHPROBS
 	kprintf("Warning: this probably won't work with a "
 		"synchronization-problems kernel.\n");
 #endif
 
-	result = thread_fork(args[0] /* thread name */,
+	result = thread_fork_wait(args[0] /* thread name */,
 			cmd_progthread /* thread function */,
 			args /* thread arg */, nargs /* thread arg */,
-			NULL);
+			&thread);
 	if (result) {
 		kprintf("thread_fork failed: %s\n", strerror(result));
 		return result;
 	}
+	P(thread->waiting_on);
+	sem_destroy(thread->waiting_on);
+	thread->parent_pid = -1;
 
 	return 0;
 }

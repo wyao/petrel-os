@@ -645,6 +645,59 @@ thread_fork(const char *name,
 	return 0;
 }
 
+// Same behavior as thread_fork but assigns positive parent pid
+// so the newly created thread will not be reaped until explicitly
+// marked as such. Also allocates waiting_on semaphore
+// The calling thread should set its parent
+// pid to -1 and free the semaphore when it is done waiting on it.
+int
+thread_fork_wait(const char *name,
+	    void (*entrypoint)(void *data1, unsigned long data2),
+	    void *data1, unsigned long data2,
+	    struct thread **ret)
+{
+	struct thread *newthread;
+
+	newthread = thread_create(name);
+	if (newthread == NULL) {
+		return ENOMEM;
+	}
+
+	newthread->parent_pid = 1; // MARKS CHILD NOT TO BE REAPED.
+	newthread->waiting_on = sem_create("waiting_on",0);
+
+	/* Allocate a stack */
+	newthread->t_stack = kmalloc(STACK_SIZE);
+	if (newthread->t_stack == NULL) {
+		thread_destroy(newthread);
+		return ENOMEM;
+	}
+	thread_checkstack_init(newthread);
+
+	/* Thread subsystem fields */
+	newthread->t_cpu = curthread->t_cpu;
+
+	/* VFS fields */
+	if (curthread->t_cwd != NULL) {
+		VOP_INCREF(curthread->t_cwd);
+		newthread->t_cwd = curthread->t_cwd;
+	}
+
+	newthread->t_iplhigh_count++;
+
+	/* Set up the switchframe so entrypoint() gets called */
+	switchframe_init(newthread, entrypoint, data1, data2);
+
+	/* Lock the current cpu's run queue and make the new thread runnable */
+	thread_make_runnable(newthread, false);
+
+	if (ret != NULL) {
+		*ret = newthread;
+	}
+
+	return 0;
+}
+
 /*
  * High level, machine-independent context switch code.
  *
@@ -928,7 +981,7 @@ thread_exit(void)
 	/* Interrupts off on this processor */
 	splhigh();
 	// Signal parent
-	if (cur->parent_pid >= PID_MIN) {
+	if (cur->parent_pid > 0) {
 		V(cur->waiting_on);
 	}
 	thread_switch(S_ZOMBIE, NULL);

@@ -177,6 +177,10 @@ int thread_fork(const char *name,
                 void (*func)(void *, unsigned long),
                 void *data1, unsigned long data2,
                 struct thread **ret);
+int thread_fork_wait(const char *name,
+                void (*func)(void *, unsigned long),
+                void *data1, unsigned long data2,
+                struct thread **ret);
 
 /*
  * Cause the current thread to exit.
