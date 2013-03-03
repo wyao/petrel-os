@@ -167,12 +167,21 @@ thread_create(const char *name)
 	thread->children = NULL;
 
 	thread->fd = kmalloc(MAX_FILE_DESCRIPTOR*sizeof(struct file_table *));
-	if (thread->fd == NULL)
-		panic("thread_bootstrap: Out of memory\n");
-
+	if (thread->fd == NULL) {
+		kfree(thread->t_name);
+		kfree(thread);
+		return NULL;
+	}
 	int i;
 	for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
 		thread->fd[i] = NULL;
+	thread->waiting_on = sem_create("waiting_on",0);
+	if (thread->waiting_on == NULL){
+		kfree(thread->fd);
+		kfree(thread->t_name);
+		kfree(thread);
+		return NULL;
+	}
 
 	return thread;
 }
@@ -282,6 +291,8 @@ thread_destroy(struct thread *thread)
 
 	/* sheer paranoia */
 	thread->t_wchan_name = "DESTROYED";
+
+	sem_destroy(thread->waiting_on);
 
 	kfree(thread->t_name);
 	kfree(thread);
@@ -928,9 +939,8 @@ thread_exit(void)
 	/* Interrupts off on this processor */
 	splhigh();
 	// Signal parent
-	if (cur->parent_pid >= PID_MIN) {
-		V(cur->waiting_on);
-	}
+	V(cur->waiting_on);
+	
 	thread_switch(S_ZOMBIE, NULL);
 	
 	panic("The zombie walks!\n");
