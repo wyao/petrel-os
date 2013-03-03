@@ -95,6 +95,13 @@ pid_t sys_fork(struct trapframe *tf, int *err){
     goto err5;
   }
 
+  // Create semaphore for the child process
+  struct semaphore *child_waiting_on = sem_create("waiting_on",0);
+  if (child_waiting_on == NULL){
+    *err = ENOMEM;
+    goto err8;
+  }
+
   // Create a pid_list entry for the parent
   struct pid_list *new_child_pidlist = kmalloc(sizeof(struct pid_list));
   if (new_child_pidlist == NULL){
@@ -118,6 +125,7 @@ pid_t sys_fork(struct trapframe *tf, int *err){
       child_thread->fd[i]->refcnt++;
     }
   }
+  child_thread->waiting_on = child_waiting_on;
   child_thread->t_addrspace = child_as;
   child_thread->t_cwd = curthread->t_cwd;
   VOP_INCREF(child_thread->t_cwd); // TODO: do we need to do this?
@@ -146,6 +154,8 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   err10:
     kfree(new_child_pidlist);
   err9:
+    sem_destroy(child_waiting_on);
+  err8:
     as_destroy(child_as);
   err5:
     sem_destroy(s->wait_on_parent);

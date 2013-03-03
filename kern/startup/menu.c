@@ -40,7 +40,6 @@
 #include <sfs.h>
 #include <syscall.h>
 #include <test.h>
-#include <synch.h>
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
@@ -128,7 +127,6 @@ int
 common_prog(int nargs, char **args)
 {
 	int result;
-	struct thread *thread;
 
 #if OPT_SYNCHPROBS
 	kprintf("Warning: this probably won't work with a "
@@ -138,12 +136,11 @@ common_prog(int nargs, char **args)
 	result = thread_fork(args[0] /* thread name */,
 			cmd_progthread /* thread function */,
 			args /* thread arg */, nargs /* thread arg */,
-			&thread);
+			NULL);
 	if (result) {
 		kprintf("thread_fork failed: %s\n", strerror(result));
 		return result;
 	}
-	P(thread->waiting_on); // Wait on child thread, who will V semaphore in thread_exit
 
 	return 0;
 }
