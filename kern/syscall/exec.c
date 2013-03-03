@@ -11,11 +11,14 @@
 #include <test.h>
 #include <synch.h>
 #include <kern/unistd.h>
+#include <copyinout.h>
 
 //TODO: turn interrupts off
 //TODO: Stack pointer == argv pointer
+//TODO: memory limits; see error msgs
 
 int sys_execv(userptr_t progname, userptr_t args){
+    char **usr_args = (char**)args;
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
     int result;
@@ -28,9 +31,34 @@ int sys_execv(userptr_t progname, userptr_t args){
 
     // Make new addr
     struct addrspace *new_addr = as_create();
+    if (new_addr == NULL){
+        vfs_close(v);
+        return ENOMEM;
+    }
 
-    // Copy args to kernel
-    (void)args;
+    // Create in kernel buffer
+    int i = 0;
+    while(usr_args[i] != NULL){
+        i++;
+    }/*
+    char *args_buf[i+1];
+
+    // Copy args to kernel with copyinstr
+    // The args argument is an array of 0-terminated strings.
+    // The array itself should be terminated by a NULL pointer.
+
+    int len = 0;
+    i = 0;
+    size_t got;
+    while (usr_args[i] != NULL){
+        len = strlen(usr_args[i]) + 1;
+        result = copyinstr(args[i], args_buf[i], len, &got);
+        if (result){
+            //TODO: Use got? and cleanup
+            return result;
+        }
+        i++;
+    }*/
 
     // Swap addrspace
     as_activate(new_addr);
