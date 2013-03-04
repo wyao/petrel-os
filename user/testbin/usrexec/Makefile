@@ -1,10 +1,10 @@
-# Makefile for usrfork
+# Makefile for usrexec
 
 TOP=../../..
 .include "$(TOP)/mk/os161.config.mk"
 
-PROG=usrfork
-SRCS=usrfork.c
+PROG=usrexec
+SRCS=usrexec.c
 BINDIR=/testbin
 
 
