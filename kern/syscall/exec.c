@@ -15,14 +15,18 @@
 
 //TODO: turn interrupts off
 //TODO: Stack pointer == argv pointer
-//TODO: memory limits; see error msgs
+//TODO: memory limits; see error msgs; see limit.h
+//TODO: set up stdio?
 
 int sys_execv(userptr_t progname, userptr_t args){
-    char **usr_args = (char**)args;
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
-    int result;
+    userptr_t userdest;
+    int result, i, len, argc, pad;
+    size_t got;
 
+    char **usr_args = (char**)args;
+ 
     /* Open the file. */
     result = vfs_open((char *)progname, O_RDONLY, 0, &v);
     if (result) {
@@ -31,39 +35,34 @@ int sys_execv(userptr_t progname, userptr_t args){
 
     // Make new addr
     struct addrspace *new_addr = as_create();
-    if (new_addr == NULL){
-        vfs_close(v);
-        return ENOMEM;
-    }
+    //TODO: check addrs != NULL
 
     // Create in kernel buffer
-    int i = 0;
-    while(usr_args[i] != NULL){
-        i++;
-    }/*
-    char *args_buf[i+1];
+    while(usr_args[argc] != NULL){
+        argc++;
+    }
+    char *args_buf[argc+1];
 
-    // Copy args to kernel with copyinstr
+    // Copy args to kernel with copyinstr; The array is terminated by a NULL
     // The args argument is an array of 0-terminated strings.
-    // The array itself should be terminated by a NULL pointer.
-
-    int len = 0;
-    i = 0;
-    size_t got;
     while (usr_args[i] != NULL){
         len = strlen(usr_args[i]) + 1;
-        result = copyinstr(args[i], args_buf[i], len, &got);
+        const_userptr_t usersrc = (const_userptr_t)&args[i];
+        
+        result = copyinstr(usersrc, args_buf[i], len, &got);
         if (result){
-            //TODO: Use got? and cleanup
+            vfs_close(v);
             return result;
         }
+        if ((int)got != len){
+            vfs_close(v);
+            return EIO;
+        }
         i++;
-    }*/
+    }
 
     // Swap addrspace
     as_activate(new_addr);
-
-    // Copy args to new addrspace
 
     /* Load the executable. */
     result = load_elf(v, &entrypoint);
@@ -83,11 +82,39 @@ int sys_execv(userptr_t progname, userptr_t args){
         return result;
     }
 
+    // Copy args to new addrspace
+    userptr_t user_argv[argc+1];
+
+    for (i=argc-1; i>-1; i--){
+        len = strlen(args_buf[i]) + 1;
+        const char *arg_out = (char *)&args_buf[i];
+        pad = (4 - (len%4) ); // Word align
+
+        if (i==argc-1){
+            user_argv[i] = (userptr_t)(stackptr - len - pad);
+        }
+        else{
+            user_argv[i] = (userptr_t)(usr_args[i+1] - len - pad);
+        }
+
+        copyoutstr(arg_out, user_argv[i], len, &got);
+        // TODO: Err checking
+    }
+
+    // Copy pointers to argv
+    userdest = user_argv[0] - 4 * (argc+1);
+    stackptr = (vaddr_t)userdest; // Set stack pointer
+    for (i=0; i<argc+1; i++){
+        const void *src = (void *)&user_argv[i];
+        copyout(src, userdest, 4);
+        userdest += 4;
+    }
+
     /* Warp to user mode. */
     enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
               stackptr, entrypoint);
 
     /* enter_new_process does not return. */
-    panic("enter_new_process returned\n");
+    vfs_close(v);
     return EINVAL;
 }
