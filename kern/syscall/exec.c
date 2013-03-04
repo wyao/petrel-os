@@ -12,8 +12,8 @@
 #include <synch.h>
 #include <kern/unistd.h>
 #include <copyinout.h>
+#include <spl.h>
 
-//TODO: turn interrupts off
 //TODO: Stack pointer == argv pointer
 //TODO: memory limits; see error msgs; see limit.h
 //TODO: set up stdio?
@@ -22,7 +22,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
     userptr_t userdest;
-    int result, i, len, argc, pad;
+    int result, i, len, argc, pad, spl;
     size_t got;
 
     char **usr_args = (char**)args;
@@ -37,7 +37,11 @@ int sys_execv(userptr_t progname, userptr_t args){
     struct addrspace *new_addr = as_create();
     //TODO: check addrs != NULL
 
+    // Turn interrupts off to prevent multiple execs from executing to save space
+    spl = splhigh();
+
     // Create in kernel buffer
+    argc = 0;
     while(usr_args[argc] != NULL){
         argc++;
     }
@@ -45,11 +49,10 @@ int sys_execv(userptr_t progname, userptr_t args){
 
     // Copy args to kernel with copyinstr; The array is terminated by a NULL
     // The args argument is an array of 0-terminated strings.
+    i = 0;
     while (usr_args[i] != NULL){
         len = strlen(usr_args[i]) + 1;
-        const_userptr_t usersrc = (const_userptr_t)&args[i];
-        
-        result = copyinstr(usersrc, args_buf[i], len, &got);
+        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], len, &got);
         if (result){
             vfs_close(v);
             return result;
@@ -87,7 +90,6 @@ int sys_execv(userptr_t progname, userptr_t args){
 
     for (i=argc-1; i>-1; i--){
         len = strlen(args_buf[i]) + 1;
-        const char *arg_out = (char *)&args_buf[i];
         pad = (4 - (len%4) ); // Word align
 
         if (i==argc-1){
@@ -97,7 +99,7 @@ int sys_execv(userptr_t progname, userptr_t args){
             user_argv[i] = (userptr_t)(usr_args[i+1] - len - pad);
         }
 
-        copyoutstr(arg_out, user_argv[i], len, &got);
+        copyoutstr((const char*)args_buf[i], user_argv[i], len, &got);
         // TODO: Err checking
     }
 
@@ -109,6 +111,8 @@ int sys_execv(userptr_t progname, userptr_t args){
         copyout(src, userdest, 4);
         userdest += 4;
     }
+
+    splx(spl);
 
     /* Warp to user mode. */
     enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
