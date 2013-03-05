@@ -25,70 +25,67 @@ int sys_execv(userptr_t progname, userptr_t args){
     int result, i, len, argc, pad, spl;
     size_t got;
 
+    struct addrspace *old_addr = curthread->t_addrspace;
     char **usr_args = (char**)args;
- 
-    /* Open the file. */
-    result = vfs_open((char *)progname, O_RDONLY, 0, &v);
-    if (result) {
-        return result;
-    }
 
-    // Make new addr in case of failure
-    struct addrspace *new_addr = as_create();
-    //TODO: check addrs != NULL
-
-    // Turn interrupts off to prevent multiple execs from executing to save space
-    spl = splhigh();
-
-    // Create in kernel buffer
+    // Count argc
     argc = 0;
     while(usr_args[argc] != NULL){
         argc++;
     }
+
     char *args_buf[argc+1];
+    userptr_t user_argv[argc+1];
+
+    // Turn interrupts off to prevent multiple execs from executing to save space
+    spl = splhigh();
+
+    /* Open the file. */
+    result = vfs_open((char *)progname, O_RDONLY, 0, &v);
+    if (result) {
+        goto err1;
+    }
+
+    // Keep old addrspace in case of failure
+    struct addrspace *new_addr = as_create();
+    if (new_addr == NULL){
+        result = ENOMEM;
+        goto err2;
+    }
 
     // Copy args to kernel with copyinstr; The array is terminated by a NULL
     // The args argument is an array of 0-terminated strings.
     i = 0;
     while (usr_args[i] != NULL){
-        len = strlen(usr_args[i]) + 1;
-        args_buf[i] = kmalloc(ARG_MAX*sizeof(char)); // TODO: free in case of error
+        args_buf[i] = kmalloc(ARG_MAX*sizeof(char));
+        if (args_buf[i] == NULL){
+            result = ENOMEM;
+            goto err3;
+        }
         result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], ARG_MAX, &got);
         if (result){
-            vfs_close(v);
-            return result;
-        }
-        if ((int)got != len){
-            vfs_close(v);
-            return EIO;
+            goto err3;
         }
         i++;
     }
 
     // Swap addrspace
-    as_activate(new_addr);
+    curthread->t_addrspace = new_addr;
+    as_activate(curthread->t_addrspace);
 
     /* Load the executable. */
     result = load_elf(v, &entrypoint);
     if (result) {
-        /* thread_exit destroys curthread->t_addrspace */
-        vfs_close(v);
-        return result;
+        goto err4;
     }
-
-    /* Done with the file now. */
-    vfs_close(v);
 
     /* Define the user stack in the address space */
     result = as_define_stack(curthread->t_addrspace, &stackptr);
     if (result) {
-        /* thread_exit destroys curthread->t_addrspace */
-        return result;
+        goto err4;
     }
 
     // Copy args to new addrspace
-    userptr_t user_argv[argc+1];
-
     for (i=argc-1; i>-1; i--){
         len = strlen(args_buf[i]) + 1;
         pad = (4 - (len%4) ); // Word align
@@ -100,20 +97,26 @@ int sys_execv(userptr_t progname, userptr_t args){
             user_argv[i] = (userptr_t)(usr_args[i+1] - len - pad);
         }
 
-        copyoutstr((const char*)args_buf[i], user_argv[i], len, &got);
-        kfree(args_buf[i]);
-        // TODO: Err checking
+        result = copyoutstr((const char*)args_buf[i], user_argv[i], len, &got);
+        if (result){
+            goto err4;
+        }
     }
 
     // Copy pointers to argv
     userdest = user_argv[0] - 4 * (argc+1);
     stackptr = (vaddr_t)userdest; // Set stack pointer
     for (i=0; i<argc+1; i++){
-        const void *src = (void *)&user_argv[i];
-        copyout(src, userdest, 4);
+        result = copyout((const void *)&user_argv[i], userdest, 4);
+        if (result)
+            goto err4;
         userdest += 4;
     }
 
+    // Wrap up
+    for (i=0; i<argc+1; i++)
+        kfree(args_buf[i]);
+    vfs_close(v);
     splx(spl);
 
     /* Warp to user mode. */
@@ -121,6 +124,20 @@ int sys_execv(userptr_t progname, userptr_t args){
               stackptr, entrypoint);
 
     /* enter_new_process does not return. */
-    vfs_close(v);
     return EINVAL;
+
+    err4:
+        curthread->t_addrspace = old_addr;
+        as_activate(curthread->t_addrspace);
+    err3:
+        for (i=0; i<argc+1; i++){
+            if (args_buf[i] != NULL)
+                kfree(args_buf[i]);
+        }
+        as_destroy(new_addr);
+    err2:
+        vfs_close(v);
+    err1:
+        splx(spl);
+        return result;
 }
