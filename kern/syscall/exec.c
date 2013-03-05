@@ -22,8 +22,8 @@ int sys_execv(userptr_t progname, userptr_t args){
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
     userptr_t userdest;
-    int result, i, len, argc, pad, spl;
-    size_t got;
+    int result, i, argc, pad, spl;
+    size_t get, offset;
 
     struct addrspace *old_addr = curthread->t_addrspace;
     char **usr_args = (char**)args;
@@ -33,9 +33,9 @@ int sys_execv(userptr_t progname, userptr_t args){
     while(usr_args[argc] != NULL){
         argc++;
     }
-
-    char *args_buf[argc+1];
-    userptr_t user_argv[argc+1];
+    size_t got[argc];
+    char *args_buf[argc];
+    userptr_t user_argv[argc]; //TODO Need to copy in NULL for argv[argc]
 
     // Turn interrupts off to prevent multiple execs from executing to save space
     spl = splhigh();
@@ -62,7 +62,7 @@ int sys_execv(userptr_t progname, userptr_t args){
             result = ENOMEM;
             goto err3;
         }
-        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], ARG_MAX, &got);
+        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], ARG_MAX, &got[i]);
         if (result){
             goto err3;
         }
@@ -86,18 +86,15 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
 
     // Copy args to new addrspace
+    offset = 0;
     for (i=argc-1; i>-1; i--){
-        len = strlen(args_buf[i]) + 1;
-        pad = (4 - (len%4) ) % 4; // Word align
+        pad = (4 - (got[i]%4) ) % 4; // Word align
+        offset += pad;
+        offset += got[i];
 
-        if (i==argc-1){
-            user_argv[i] = (userptr_t)(stackptr - len - pad);
-        }
-        else{
-            user_argv[i] = (userptr_t)(usr_args[i+1] - len - pad);
-        }
+        user_argv[i] = (userptr_t)(stackptr - offset);
 
-        result = copyoutstr((const char*)args_buf[i], user_argv[i], len, &got);
+        result = copyoutstr((const char*)args_buf[i], user_argv[i], got[i], &get);
         if (result){
             goto err4;
         }
@@ -106,7 +103,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     // Copy pointers to argv
     userdest = user_argv[0] - 4 * (argc+1);
     stackptr = (vaddr_t)userdest; // Set stack pointer
-    for (i=0; i<argc+1; i++){
+    for (i=0; i<argc; i++){ // TODO: Copy NULL?
         result = copyout((const void *)&user_argv[i], userdest, 4);
         if (result)
             goto err4;
@@ -114,14 +111,13 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
 
     // Wrap up
-    for (i=0; i<argc+1; i++)
+    for (i=0; i<argc; i++)
         kfree(args_buf[i]);
     vfs_close(v);
     splx(spl);
 
     /* Warp to user mode. */
-    enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-              stackptr, entrypoint);
+    enter_new_process(argc, (userptr_t)stackptr, stackptr, entrypoint);
 
     /* enter_new_process does not return. */
     return EINVAL;
@@ -130,7 +126,7 @@ int sys_execv(userptr_t progname, userptr_t args){
         curthread->t_addrspace = old_addr;
         as_activate(curthread->t_addrspace);
     err3:
-        for (i=0; i<argc+1; i++){
+        for (i=0; i<argc; i++){
             if (args_buf[i] != NULL)
                 kfree(args_buf[i]);
         }
