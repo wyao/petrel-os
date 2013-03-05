@@ -8,6 +8,7 @@ int main()
 {
     /*Spawn a child to run the program.*/
     pid_t pid=fork();
+    int status;
     if (pid==0) { /* child process */
         //static char *argv[3]={ (char *)"echo", (char *)"Foo is my name.",NULL};
         static char *argv[3] = {(char*)"argtest", (char*)"test!",NULL};
@@ -15,7 +16,8 @@ int main()
         exit(127); /* only if execv fails */
     }
     else { /* pid!=0; parent process */
-        waitpid(pid,0,0); /* wait for child to exit */
+        waitpid(pid,&status,0); /* wait for child to exit */
+        printf("Child finished\n");
     }
     return 0;
 }
