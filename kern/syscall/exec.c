@@ -88,7 +88,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     // Copy args to new addrspace
     for (i=argc-1; i>-1; i--){
         len = strlen(args_buf[i]) + 1;
-        pad = (4 - (len%4) ); // Word align
+        pad = (4 - (len%4) ) % 4; // Word align
 
         if (i==argc-1){
             user_argv[i] = (userptr_t)(stackptr - len - pad);
