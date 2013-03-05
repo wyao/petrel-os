@@ -142,7 +142,7 @@ syscall(struct trapframe *tf)
         break;
 
         case SYS_execv:
-        retval = sys_execv((userptr_t)tf->tf_a0, (userptr_t)tf->tf_a1);
+        err = sys_execv((userptr_t)tf->tf_a0, (userptr_t)tf->tf_a1);
         break;
 
         case SYS__exit:
@@ -150,8 +150,7 @@ syscall(struct trapframe *tf)
         break;
 
         case SYS_chdir:
-        // TODO: Doesn't this need err?
-        retval = sys_chdir((const_userptr_t)tf->tf_a0);
+        err = sys_chdir((const_userptr_t)tf->tf_a0);
         break;
 
         case SYS___getcwd:

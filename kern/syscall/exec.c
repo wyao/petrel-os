@@ -19,11 +19,11 @@
 //TODO: set up stdio?
 
 int sys_execv(userptr_t progname, userptr_t args){
+    int i, pad, spl, argc, result;
+    size_t get, offset;
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
     userptr_t userdest;
-    int result, i, argc, pad, spl;
-    size_t get, offset;
 
     struct addrspace *old_addr = curthread->t_addrspace;
     char **usr_args = (char**)args;
@@ -35,7 +35,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
     size_t got[argc];
     char *args_buf[argc];
-    userptr_t user_argv[argc]; //TODO Need to copy in NULL for argv[argc]
+    userptr_t user_argv[argc]; //TODO Need to copy in NULL for argv[argc]?
 
     // Turn interrupts off to prevent multiple execs from executing to save space
     spl = splhigh();
