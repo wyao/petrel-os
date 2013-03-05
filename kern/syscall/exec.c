@@ -14,9 +14,8 @@
 #include <copyinout.h>
 #include <spl.h>
 
-//TODO: Stack pointer == argv pointer
 //TODO: memory limits; see error msgs; see limit.h
-//TODO: set up stdio?
+//TODO: use PATH_MAX?
 
 int sys_execv(userptr_t progname, userptr_t args){
     int i, pad, spl, argc, result;
@@ -35,7 +34,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
     size_t got[argc];
     char *args_buf[argc];
-    userptr_t user_argv[argc]; //TODO Need to copy in NULL for argv[argc]?
+    userptr_t user_argv[argc];
 
     // Turn interrupts off to prevent multiple execs from executing to save space
     spl = splhigh();
@@ -103,7 +102,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     // Copy pointers to argv
     userdest = user_argv[0] - 4 * (argc+1);
     stackptr = (vaddr_t)userdest; // Set stack pointer
-    for (i=0; i<argc; i++){ // TODO: Copy NULL?
+    for (i=0; i<argc; i++){
         result = copyout((const void *)&user_argv[i], userdest, 4);
         if (result)
             goto err4;

@@ -13,6 +13,8 @@
 #include <uio.h>
 #include <kern/seek.h>
 
+//TODO Use PATH_MAX?
+
 int
 sys_open(userptr_t filename, int flags, int *err) {
   int i;
