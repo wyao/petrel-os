@@ -163,14 +163,17 @@ lock_create(const char *name)
 		return NULL;
 	}
 
-	lock->l_wchan = wchan_create(lock->lk_name);
-	if (lock->l_wchan == NULL) {
+	// Added for ASST1
+
+	lock->lock_wchan = wchan_create(lock->lk_name);
+	if (lock->lock_wchan == NULL) {
 		kfree(lock->lk_name);
 		kfree(lock);
 		return NULL;
 	}
 
-	spinlock_init(&lock->sp_lock);
+	spinlock_init(&lock->lock_lock);
+	lock->lock = 1;
 	lock->holder = NULL;
 
 	return lock;
@@ -180,61 +183,81 @@ void
 lock_destroy(struct lock *lock)
 {
 	KASSERT(lock != NULL);
-	KASSERT(lock->holder == NULL);
 
-	spinlock_cleanup(&lock->sp_lock);
-	wchan_destroy(lock->l_wchan);
+	// Added for ASST1
+	KASSERT(lock->holder == NULL);  // Cannot destroy a lock that is held
+
+	spinlock_cleanup(&lock->lock_lock);
+	wchan_destroy(lock->lock_wchan);
 	kfree(lock->lk_name);
 	kfree(lock);
-	lock = NULL;
 }
 
 void
 lock_acquire(struct lock *lock)
-{
-	KASSERT(lock != NULL);
-	KASSERT(curthread->t_in_interrupt == false);
-
-	spinlock_acquire(&lock->sp_lock);
-	while (lock->holder != NULL) {
-		wchan_lock(lock->l_wchan);
-		spinlock_release(&lock->sp_lock);
-		wchan_sleep(lock->l_wchan);
-
-		spinlock_acquire(&lock->sp_lock);
+{	
+        // Written for ASST1
+        KASSERT(lock != NULL);
+	
+	/* this must work before CPU initialization */
+	if (CURCPU_EXISTS()) {
+	  KASSERT(lock->holder != curthread);     // Cannot acquire lock you already have
 	}
-	KASSERT(lock->holder == NULL);
-	lock->holder = curthread;
-	spinlock_release(&lock->sp_lock);
+
+	KASSERT(curthread->t_in_interrupt == false);  // Don't block in signal handler
+
+	spinlock_acquire(&lock->lock_lock);
+	
+	while (lock->lock == 0) {
+	  wchan_lock(lock->lock_wchan);
+	  spinlock_release(&lock->lock_lock);
+	  wchan_sleep(lock->lock_wchan);
+
+	  spinlock_acquire(&lock->lock_lock);
+	}
+	KASSERT(lock->lock > 0);
+	lock->lock = 0;
+	
+	/* this must work before CPU initialization */
+	if (CURCPU_EXISTS()) {
+	  lock->holder = curthread;  // Set the current thread as the holder
+	}
+	else {
+	  lock->holder = NULL;
+	}
+
+	spinlock_release(&lock->lock_lock);
 }
 
 void
 lock_release(struct lock *lock)
 {
-	KASSERT(lock != NULL);
+        // Written for ASST1
+        KASSERT(lock != NULL);
+	
+	spinlock_acquire(&lock->lock_lock);
+	
+	/* this must work before CPU initialization */
+	if (CURCPU_EXISTS()){
+	  KASSERT(lock->holder == curthread);  // Ensure that we hold the lock
+	}
 
-	spinlock_acquire(&lock->sp_lock);
-
-	KASSERT(lock->holder == curthread); // Ensure no other thread can release lock
-
+	lock->lock++;
 	lock->holder = NULL;
-	KASSERT(lock->holder == NULL);
-	wchan_wakeone(lock->l_wchan);
-
-	spinlock_release(&lock->sp_lock);
+	KASSERT(lock->lock > 0);
+	wchan_wakeone(lock->lock_wchan);
+	
+	spinlock_release(&lock->lock_lock);
 }
 
 bool
 lock_do_i_hold(struct lock *lock)
 {
-	KASSERT(lock != NULL);
-	bool holds_lock;
+        if (!CURCPU_EXISTS()) {
+	  return true;  // This is done in spinlock
+	}
 
-	spinlock_acquire(&lock->sp_lock);
-	holds_lock = (lock->holder == curthread);
-	spinlock_release(&lock->sp_lock);
-
-	return holds_lock;
+	return (lock->holder == curthread);
 }
 
 ////////////////////////////////////////////////////////////
@@ -264,6 +287,7 @@ cv_create(const char *name)
 		kfree(cv);
 		return NULL;
 	}
+
 	return cv;
 }
 
@@ -273,6 +297,7 @@ cv_destroy(struct cv *cv)
 	KASSERT(cv != NULL);
 
 	wchan_destroy(cv->cv_wchan);
+	
 	kfree(cv->cv_name);
 	kfree(cv);
 }
@@ -280,22 +305,35 @@ cv_destroy(struct cv *cv)
 void
 cv_wait(struct cv *cv, struct lock *lock)
 {
+	KASSERT(cv != NULL);
+	KASSERT(lock != NULL);
+
+      	wchan_lock(cv->cv_wchan);
+
 	lock_release(lock);
-	wchan_lock(cv->cv_wchan);
 	wchan_sleep(cv->cv_wchan);
+
 	lock_acquire(lock);
 }
 
 void
 cv_signal(struct cv *cv, struct lock *lock)
 {
-	KASSERT(lock_do_i_hold(lock));
+	KASSERT(cv != NULL);
+	KASSERT(lock != NULL);
+
+        KASSERT(lock_do_i_hold(lock));
+	
 	wchan_wakeone(cv->cv_wchan);
 }
 
 void
 cv_broadcast(struct cv *cv, struct lock *lock)
 {
-	KASSERT(lock_do_i_hold(lock));
+	KASSERT(cv != NULL);
+	KASSERT(lock != NULL);
+	
+        KASSERT(lock_do_i_hold(lock));
+	
 	wchan_wakeall(cv->cv_wchan);
 }

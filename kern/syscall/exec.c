@@ -52,8 +52,8 @@ int sys_execv(userptr_t progname, userptr_t args){
     i = 0;
     while (usr_args[i] != NULL){
         len = strlen(usr_args[i]) + 1;
-        //TODO: avoid using strlen; use max_arg_length and MALLOC
-        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], len, &got);
+        args_buf[i] = kmalloc(ARG_MAX*sizeof(char)); // TODO: free in case of error
+        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], ARG_MAX, &got);
         if (result){
             vfs_close(v);
             return result;
@@ -101,6 +101,7 @@ int sys_execv(userptr_t progname, userptr_t args){
         }
 
         copyoutstr((const char*)args_buf[i], user_argv[i], len, &got);
+        kfree(args_buf[i]);
         // TODO: Err checking
     }
 
