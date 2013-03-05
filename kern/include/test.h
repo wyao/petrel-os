@@ -79,7 +79,7 @@ int lock_unittest(int, char **);
 int cv_unittest(int, char **);
 
 /* Routine for running a user-level program. */
-int runprogram(char *progname);
+int runprogram(char *progname, char **args, int argc);
 
 /* Kernel menu system. */
 void menu(char *argstr);

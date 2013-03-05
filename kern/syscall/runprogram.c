@@ -47,6 +47,7 @@
 #include <synch.h>
 #include <kern/unistd.h>
 #include <limits.h>
+#include <copyinout.h>
 
 static void
 stdio_init(){
@@ -129,11 +130,25 @@ stdio_init(){
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, char **args, int argc)
 {
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
+
+	// Variables for argument passing
+	int i, pad;
+	size_t offset, get;
+	userptr_t userdest;
+
+    size_t got[argc];
+    userptr_t user_argv[argc];
+
+    // Count length of each arg
+    i = 0;
+    for (i=0; i<argc; i++){
+    	got[i] = strlen(args[i]) + 1; // Need +1 to account for /0
+    }
 
 	// TODO: HACK
 	KASSERT(process_table[PID_MIN] == NULL);
@@ -178,9 +193,34 @@ runprogram(char *progname)
 		return result;
 	}
 
+    // Copy args to new addrspace
+    offset = 0;
+    for (i=argc-1; i>-1; i--){
+        pad = (4 - (got[i]%4) ) % 4; // Word align
+        offset += pad;
+        offset += got[i];
+
+        user_argv[i] = (userptr_t)(stackptr - offset);
+
+        result = copyoutstr((const char*)args[i], user_argv[i], got[i], &get);
+        if (result){
+            return result;
+        }
+    }
+
+    // Copy pointers to argv
+    userdest = user_argv[0] - 4 * (argc+1);
+    stackptr = (vaddr_t)userdest; // Set stack pointer
+    for (i=0; i<argc; i++){
+        result = copyout((const void *)&user_argv[i], userdest, 4);
+        if (result){
+        	return result;
+        }
+        userdest += 4;
+    }
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
-			  stackptr, entrypoint);
+	enter_new_process(argc, (userptr_t)stackptr, stackptr, entrypoint);
 
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
