@@ -15,7 +15,7 @@
 #include <spl.h>
 
 //TODO: memory limits; see error msgs; see limit.h
-//TODO: use PATH_MAX?
+//TODO: use PATH_MAX, NAME_MAX, ARG_MAX
 
 int sys_execv(userptr_t progname, userptr_t args){
     int i, pad, spl, argc, result;
@@ -56,12 +56,12 @@ int sys_execv(userptr_t progname, userptr_t args){
     // The args argument is an array of 0-terminated strings.
     i = 0;
     while (usr_args[i] != NULL){
-        args_buf[i] = kmalloc(ARG_MAX*sizeof(char));
+        args_buf[i] = kmalloc(NAME_MAX*sizeof(char));
         if (args_buf[i] == NULL){
             result = ENOMEM;
             goto err3;
         }
-        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], ARG_MAX, &got[i]);
+        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], NAME_MAX, &got[i]);
         if (result){
             goto err3;
         }

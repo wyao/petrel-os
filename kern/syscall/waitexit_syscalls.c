@@ -39,7 +39,6 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 	int contains = 0;
 	struct pid_list *tmp = curthread->children;
 	while (tmp != NULL){
-		tmp = curthread->children;
 		if (tmp->pid == pid){
 			contains = 1;
 			break;
