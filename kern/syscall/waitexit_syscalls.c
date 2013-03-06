@@ -6,11 +6,16 @@
 #include <kern/errno.h>
 #include <kern/fcntl.h>
 #include <current.h>
+#include <copyinout.h>
 
 void
 sys__exit(int exitcode){
 	struct pid_list *tmp;
+	int i;
 
+	for (i=0; i<MAX_FILE_DESCRIPTOR; i++){
+		sys_close(i);
+	}
 	while(curthread->children != NULL) {
 		tmp = curthread->children;
 		process_table[tmp->pid]->parent_pid = -1; // Mark children as orphans
@@ -77,8 +82,8 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 		}
 	}
 
-	sem_destroy(process_table[pid]->waiting_on);	
-	*status = process_table[pid]->exit_status;
+	sem_destroy(process_table[pid]->waiting_on);
+	*err = copyout(&(process_table[pid]->exit_status),(userptr_t)status,sizeof(int));	
 	process_table[pid]->parent_pid = -1; // Mark for reaping by exorcise
 	process_table[pid] = NULL;
 

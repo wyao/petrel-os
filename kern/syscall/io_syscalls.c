@@ -101,7 +101,8 @@ sys_close(int fd) {
   
   curthread->fd[fd]->refcnt--;
   // Returns void; prints for hard I/O errors so no way to return them
-  vfs_close(curthread->fd[fd]->file);
+  if (curthread->fd[fd]->refcnt == 0)
+    vfs_close(curthread->fd[fd]->file);
   
   // Free contents of struct (vnode should be freed by vfs_close)
   if (curthread->fd[fd]->refcnt == 0){
