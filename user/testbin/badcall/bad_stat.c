@@ -116,7 +116,7 @@ void
 test_lstat(void)
 {
 	test_lstat_path();
-	any_empty(lstat, "stat");
+	any_empty(lstat, "lstat");
 	any_badbuf(badbuf_lstat, "lstat");
 }
 

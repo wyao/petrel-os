@@ -30,6 +30,9 @@
 #ifndef _ARRAY_H_
 #define _ARRAY_H_
 
+#include <cdefs.h>
+#include <lib.h>
+
 #define ARRAYS_CHECKED
 
 #ifdef ARRAYS_CHECKED

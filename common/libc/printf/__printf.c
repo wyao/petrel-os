@@ -563,7 +563,11 @@ __vprintf(void (*func)(void *clientdata, const char *str, size_t len),
 
 	pf.sendfunc = func;
 	pf.clientdata = clientdata;
+#ifdef va_copy
+	va_copy(pf.ap, ap);
+#else
 	pf.ap = ap;
+#endif
 	pf.charcount = 0;
 	__pf_endfield(&pf);
 
