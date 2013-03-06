@@ -17,7 +17,19 @@
 
 int
 sys_open(userptr_t filename, int flags, int *err) {
-  int i;
+  int i,result;
+  char *kbuf;
+  size_t got;
+
+  int f = flags & O_ACCMODE;
+  if (f != O_RDONLY && f != O_WRONLY && f != O_RDWR){
+    *err = EINVAL;
+    return -1;
+  }
+  if (filename == NULL){
+    *err = EFAULT;
+    return -1;
+  }
   // Look for an available file descriptor
   for (i=0; i<MAX_FILE_DESCRIPTOR; i++) {
     if (curthread->fd[i] == NULL) {
@@ -31,7 +43,7 @@ sys_open(userptr_t filename, int flags, int *err) {
 
       curthread->fd[i]->mutex = lock_create("mutex");
       if (curthread->fd[i]->mutex == NULL){
-        *err = -1; //TODO unsure what errno to use
+        *err = ENOMEM; //TODO unsure what errno to use
         goto err2;
       }
 
@@ -40,15 +52,31 @@ sys_open(userptr_t filename, int flags, int *err) {
       curthread->fd[i]->offset = 0;
       curthread->fd[i]->update_pos = 1;
 
+      kbuf = (char *)kmalloc(PATH_MAX*sizeof(char));
+      if (kbuf == NULL){
+        *err = ENOMEM; //TODO: Not sure what error to use
+        goto err3;
+      }
+      result = copyinstr((const_userptr_t)filename,kbuf,PATH_MAX,&got);
+      if (result){
+        *err = EFAULT;
+        goto err4;
+      }
       // Return value is 0 for success
       // TODO: Should this be the same errno?
       *err = vfs_open((char *)filename,flags,0664,&(curthread->fd[i]->file));
-      if (*err)
-        goto err2;
+      if (*err){
+        goto err4;
+      }
 
       // Success
+      kfree(kbuf);
       return i;
 
+      err4:
+        kfree(kbuf);
+      err3:
+        lock_destroy(curthread->fd[i]->mutex);
       err2:
         kfree(curthread->fd[i]);
       err1:

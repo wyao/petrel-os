@@ -302,8 +302,10 @@ exorcise(void)
 	while ((z = threadlist_remhead(&curcpu->c_zombies)) != NULL) {
 		KASSERT(z != curthread);
 		KASSERT(z->t_state == S_ZOMBIE);
-		if (!z->parent_pid > 0)  // ONLY REAP ZOMBIES WITHOUT PARENTS
+		if (!z->parent_pid > 0){  // ONLY REAP ZOMBIES WITHOUT PARENTS
+			process_table[z->pid] = NULL;
 			thread_destroy(z);
+		}
 	}
 }
 
