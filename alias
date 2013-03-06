@@ -1,0 +1,29 @@
+PATH=$PATH:$HOME/.local/bin:$HOME/bin
+
+export PATH
+
+alias aa='emacs ~/.bash_profile'
+alias la='. ~/.bash_profile'
+
+kmake()
+{
+cd ~/cs161/os161/kern/conf
+./config ASST2
+cd ../compile/ASST2
+bmake depend
+bmake
+bmake install
+cd ~/cs161/root
+}
+alias kmk=kmake
+alias umk='cd ~/cs161/os161/user/testbin; bmake depend; bmake; bmake install'
+
+alias kern='cd ~/cs161/os161/kern'
+alias root='cd ~/cs161/root/'
+alias user='cd ~/cs161/os161/user'
+
+alias sk='root; sys161 kernel; cd ../os161'
+alias sw='root; sys161 -w kernel'
+alias sc='root; os161-gdb kernel'
+
+alias network='sudo service network restart'
