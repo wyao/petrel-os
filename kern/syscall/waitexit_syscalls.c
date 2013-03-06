@@ -7,6 +7,7 @@
 #include <kern/fcntl.h>
 #include <current.h>
 #include <copyinout.h>
+#include <kern/wait.h>
 
 void
 sys__exit(int exitcode){
@@ -22,7 +23,7 @@ sys__exit(int exitcode){
 		curthread->children = curthread->children->next;
 		kfree(tmp);
 	}
-	curthread->exit_status = exitcode;
+	curthread->exit_status = _MKWAIT_EXIT(exitcode);
 
 	thread_exit();
 }
@@ -83,7 +84,7 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 	}
 
 	sem_destroy(process_table[pid]->waiting_on);
-	*err = copyout(&(process_table[pid]->exit_status),(userptr_t)status,sizeof(int));	
+	*err = copyout(&(process_table[pid]->exit_status), (userptr_t)status,sizeof(int));	
 	process_table[pid]->parent_pid = -1; // Mark for reaping by exorcise
 	process_table[pid] = NULL;
 

@@ -55,7 +55,7 @@ sys_open(userptr_t filename, int flags, int *err) {
 
       kbuf = (char *)kmalloc(PATH_MAX*sizeof(char));
       if (kbuf == NULL){
-        *err = ENOMEM; //TODO: Not sure what error to use
+        *err = ENOMEM;
         goto err3;
       }
       result = copyinstr((const_userptr_t)filename,kbuf,PATH_MAX,&got);

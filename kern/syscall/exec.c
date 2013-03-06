@@ -19,6 +19,7 @@
 
 int sys_execv(userptr_t progname, userptr_t args){
     int i, pad, spl, argc, result;
+    char *kbuf;
     size_t get, offset;
     struct vnode *v;
     vaddr_t entrypoint, stackptr;
@@ -38,6 +39,17 @@ int sys_execv(userptr_t progname, userptr_t args){
 
     // Turn interrupts off to prevent multiple execs from executing to save space
     spl = splhigh();
+
+    // Check user pointer
+    kbuf = (char *)kmalloc(PATH_MAX*sizeof(char));
+    if (kbuf == NULL){
+        result = ENOMEM;
+        goto err0;
+    }
+    result = copyinstr((const_userptr_t)progname,kbuf,PATH_MAX,&get);
+    if (result){
+        goto err1;
+    }
 
     /* Open the file. */
     result = vfs_open((char *)progname, O_RDONLY, 0, &v);
@@ -133,6 +145,8 @@ int sys_execv(userptr_t progname, userptr_t args){
     err2:
         vfs_close(v);
     err1:
+        kfree(kbuf);
+    err0:
         splx(spl);
         return result;
 }
