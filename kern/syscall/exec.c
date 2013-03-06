@@ -28,11 +28,32 @@ int sys_execv(userptr_t progname, userptr_t args){
     struct addrspace *old_addr = curthread->t_addrspace;
     char **usr_args = (char**)args;
 
-    // Count argc
+    kbuf = (void *) kmalloc(sizeof(void *));
+
+    // Check user pointer (reusing kbuf)
+    result = copyin((const_userptr_t)args,kbuf,4);
+    if (result){
+        kfree(kbuf);
+        return result;
+    }
+    kfree(kbuf);
+
+    // Count args
     argc = 0;
     while(usr_args[argc] != NULL){
         argc++;
     }
+
+    // argc = 0;
+    // while(1){
+    //     result = copyinstr((const_userptr_t)&args[argc],kbuf,4,&get);
+    //     if (result)
+    //         return result;
+    //     if (!*kbuf)
+    //         break;
+    //     argc++;
+    // }
+
     size_t got[argc];
     char *args_buf[argc];
     userptr_t user_argv[argc];
