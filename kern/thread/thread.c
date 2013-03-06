@@ -382,7 +382,7 @@ thread_bootstrap(void)
 	/*
 	 * Process table initialization
 	 */
-	process_table = kmalloc(MAX_PROCESSES*sizeof(struct thread *));
+	process_table = kmalloc((MAX_PROCESSES+1)*sizeof(struct thread *));
 	if (process_table == NULL)
 		panic("thread_bootstrap: Out of memory\n");
 

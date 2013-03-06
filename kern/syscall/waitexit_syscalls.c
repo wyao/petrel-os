@@ -32,10 +32,15 @@ sys_waitpid(pid_t pid, int *status, int options, int *err){
 		*err = EFAULT;
 		return -1;
 	}
+	if (pid < PID_MIN || pid > PID_MAX){
+		*err = ESRCH;
+		return -1;
+	}
 	if (process_table[pid] == NULL) {
 		*err = ESRCH;
 		return -1;
 	}
+
 	int contains = 0;
 	struct pid_list *tmp = curthread->children;
 	while (tmp != NULL){
