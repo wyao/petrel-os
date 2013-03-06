@@ -92,6 +92,8 @@ sys_open(userptr_t filename, int flags, int *err) {
 int 
 sys_close(int fd) {
   // TODO: should we check if the fd table is non-null or can we assume?
+  if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR)
+    return EBADF;
   if (curthread->fd[fd] == NULL)
     return EBADF;
   lock_acquire(curthread->fd[fd]->mutex);
