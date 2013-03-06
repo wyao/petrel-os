@@ -14,11 +14,10 @@
 #include <copyinout.h>
 #include <spl.h>
 
-//TODO: memory limits; see error msgs; see limit.h
-//TODO: use PATH_MAX, NAME_MAX, ARG_MAX
+//TODO: Use global lock instead
 
 int sys_execv(userptr_t progname, userptr_t args){
-    int i, pad, spl, argc, result;
+    int i, pad, spl, argc, result, part;
     char *kbuf;
     size_t get, offset;
     struct vnode *v;
@@ -38,28 +37,21 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
     kfree(kbuf);
 
+    // Turn interrupts off to prevent multiple execs from executing to save space
+    spl = splhigh();
+
     // Count args
     argc = 0;
     while(usr_args[argc] != NULL){
         argc++;
     }
 
-    // argc = 0;
-    // while(1){
-    //     result = copyinstr((const_userptr_t)&args[argc],kbuf,4,&get);
-    //     if (result)
-    //         return result;
-    //     if (!*kbuf)
-    //         break;
-    //     argc++;
-    // }
-
     size_t got[argc];
-    char *args_buf[argc];
     userptr_t user_argv[argc];
 
-    // Turn interrupts off to prevent multiple execs from executing to save space
-    spl = splhigh();
+    char *args_buf = kmalloc(ARG_MAX*sizeof(char));
+    if (args_buf == NULL)
+        goto err_;
 
     // Check user pointer
     kbuf = (char *)kmalloc(PATH_MAX*sizeof(char));
@@ -88,16 +80,13 @@ int sys_execv(userptr_t progname, userptr_t args){
     // Copy args to kernel with copyinstr; The array is terminated by a NULL
     // The args argument is an array of 0-terminated strings.
     i = 0;
+    part = 0;
     while (usr_args[i] != NULL){
-        args_buf[i] = kmalloc(NAME_MAX*sizeof(char));
-        if (args_buf[i] == NULL){
-            result = ENOMEM;
-            goto err3;
-        }
-        result = copyinstr((const_userptr_t)usr_args[i], args_buf[i], NAME_MAX, &got[i]);
+        result = copyinstr((const_userptr_t)usr_args[i], &args_buf[part], ARG_MAX, &got[i]);
         if (result){
             goto err3;
         }
+        part += got[i];
         i++;
     }
 
@@ -120,13 +109,14 @@ int sys_execv(userptr_t progname, userptr_t args){
     // Copy args to new addrspace
     offset = 0;
     for (i=argc-1; i>-1; i--){
+        part -= got[i]; // readjust inherited part index
         pad = (4 - (got[i]%4) ) % 4; // Word align
         offset += pad;
         offset += got[i];
 
         user_argv[i] = (userptr_t)(stackptr - offset);
 
-        result = copyoutstr((const char*)args_buf[i], user_argv[i], got[i], &get);
+        result = copyoutstr((const char*)&args_buf[part], user_argv[i], got[i], &get);
         if (result){
             goto err4;
         }
@@ -143,8 +133,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
 
     // Wrap up
-    for (i=0; i<argc; i++)
-        kfree(args_buf[i]);
+    kfree(args_buf);
     vfs_close(v);
     splx(spl);
 
@@ -158,16 +147,14 @@ int sys_execv(userptr_t progname, userptr_t args){
         curthread->t_addrspace = old_addr;
         as_activate(curthread->t_addrspace);
     err3:
-        for (i=0; i<argc; i++){
-            if (args_buf[i] != NULL)
-                kfree(args_buf[i]);
-        }
         as_destroy(new_addr);
     err2:
         vfs_close(v);
     err1:
         kfree(kbuf);
     err0:
+        kfree(args_buf);
+    err_:
         splx(spl);
         return result;
 }

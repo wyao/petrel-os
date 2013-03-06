@@ -46,7 +46,7 @@
  */
 
 /* under dumbvm, always have 48k of user stack */
-#define DUMBVM_STACKPAGES    12
+#define DUMBVM_STACKPAGES    22//12
 
 /*
  * Wrap rma_stealmem in a spinlock.
