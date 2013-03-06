@@ -12,6 +12,7 @@
 #include <kern/iovec.h>
 #include <uio.h>
 #include <kern/seek.h>
+#include <kern/stat.h>
 
 //TODO Use PATH_MAX?
 
@@ -116,11 +117,19 @@ sys_close(int fd) {
 
 int
 sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
-  if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR || curthread->fd[fd] == NULL){
+  if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR){
     *err = EBADF;
     return -1;
   }
-  // TODO: Check lock initialized?
+  if (curthread->fd[fd] == NULL){
+    *err = EBADF;
+    return -1;
+  }
+  if (buf == NULL){
+    *err = EFAULT;
+    return -1;
+  }
+
   lock_acquire(curthread->fd[fd]->mutex);
   
   if ((curthread->fd[fd]->status != rw) && (curthread->fd[fd]->status != O_RDWR)) { 
@@ -170,13 +179,16 @@ sys_write(int fd, userptr_t buf, size_t buf_len, int *err){
 
 int 
 sys_dup2(int oldfd, int newfd, int *err){
-  if (newfd < 0 || oldfd < 0 || newfd > MAX_FILE_DESCRIPTOR || oldfd > MAX_FILE_DESCRIPTOR) {
+  if (newfd < 0 || oldfd < 0 || newfd >= MAX_FILE_DESCRIPTOR || oldfd >= MAX_FILE_DESCRIPTOR) {
     *err = EBADF;
     return -1;
   }
   if (curthread->fd[oldfd] == NULL) {
     *err = EBADF;
     return -1;
+  }
+  if (oldfd == newfd || curthread->fd[oldfd] == curthread->fd[newfd]){
+    return oldfd;
   }
   int i;
   int j=0;
@@ -192,6 +204,7 @@ sys_dup2(int oldfd, int newfd, int *err){
     *err = sys_close(newfd);
   }
   curthread->fd[newfd] = curthread->fd[oldfd];
+  curthread->fd[newfd]->refcnt++;
   return newfd;
 }
 
@@ -199,6 +212,10 @@ off_t
 sys_lseek(int fd,off_t pos, int whence, int *err){
   if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END){
     *err = EINVAL;
+    return -1;
+  }
+  if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR){
+    *err = EBADF;
     return -1;
   }
   if (curthread->fd[fd] == NULL){
@@ -211,17 +228,28 @@ sys_lseek(int fd,off_t pos, int whence, int *err){
     lock_release(curthread->fd[fd]->mutex);
     return -1;
   }
-  if (curthread->fd[fd]->offset+pos < 0){
+
+  off_t newpos;
+  struct stat stat;
+  VOP_STAT(curthread->fd[fd]->file,&stat);
+  if (whence == SEEK_SET)
+    newpos = pos;
+  if (whence == SEEK_CUR)
+    newpos = curthread->fd[fd]->offset+pos;
+  if (whence == SEEK_END)
+    newpos = stat.st_size+pos;
+
+  if (newpos < 0){
     *err = EINVAL;
     lock_release(curthread->fd[fd]->mutex);
     return -1;
   }
-  if (VOP_TRYSEEK(curthread->fd[fd]->file,curthread->fd[fd]->offset+pos)){
-    *err = EINVAL;
+  *err = VOP_TRYSEEK(curthread->fd[fd]->file,newpos);
+  if (*err){
     lock_release(curthread->fd[fd]->mutex);
     return -1;
   }
-  curthread->fd[fd]->offset = curthread->fd[fd]->offset+pos;
+  curthread->fd[fd]->offset = newpos;
   lock_release(curthread->fd[fd]->mutex);
   return curthread->fd[fd]->offset;
 }
