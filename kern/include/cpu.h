@@ -34,6 +34,7 @@
 #include <spinlock.h>
 #include <threadlist.h>
 #include <machine/vm.h>  /* for TLBSHOOTDOWN_MAX */
+#define NUM_PRIORITIES 3
 
 
 /*
@@ -45,6 +46,16 @@
  * (as opposed to merely dereferencing it) in case curcpu is defined as
  * a pointer with a fixed address and a per-cpu mapping in the MMU.
  */
+
+// Multi-level feedback queue per CPU for scheduling
+struct mlf_queue {
+	struct threadlist runqueue[NUM_PRIORITIES];
+};
+void mlf_add_thread(struct mlf_queue *m, struct thread *t);
+struct thread *mlf_rem_head(struct mlf_queue *m);
+struct thread *mlf_rem_tail(struct mlf_queue *m);
+bool mlf_isempty(struct mlf_queue *m);
+unsigned mlf_count(struct mlf_queue *m);
 
 struct cpu {
 	/*
@@ -66,7 +77,8 @@ struct cpu {
 	 * Protected by the runqueue lock.
 	 */
 	bool c_isidle;			/* True if this cpu is idle */
-	struct threadlist c_runqueue;	/* Run queue for this cpu */
+	//struct threadlist c_runqueue;	/* Run queue for this cpu */
+	struct mlf_queue c_mlf_runqueue;
 	struct spinlock c_runqueue_lock;
 
 	/*

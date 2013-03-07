@@ -76,7 +76,44 @@ static struct semaphore *cpu_startup_sem;
 struct thread **process_table;
 struct lock *getpid_lock;
 
-
+////////////////////////////////////////////////////////////
+/*
+ * MLF Queue Helper Routines
+ */
+void mlf_add_thread(struct mlf_queue *m, struct thread *t){
+	//kprintf("adding thread of priority %d\n",t->priority);
+	if (t->priority >= 0 && t->priority < NUM_PRIORITIES){
+		threadlist_addtail(&m->runqueue[t->priority],t);
+	}
+}
+struct thread *mlf_rem_head(struct mlf_queue *m){
+	int i;
+	for (i=0; i<NUM_PRIORITIES; i++){
+		if (!threadlist_isempty(&m->runqueue[i]))
+			return threadlist_remhead(&m->runqueue[i]);
+	}
+	return NULL;
+}
+struct thread *mlf_rem_tail(struct mlf_queue *m){
+	int i;
+	for (i=NUM_PRIORITIES-1; i>=0; i--){
+		if (!threadlist_isempty(&m->runqueue[i]))
+			return threadlist_remtail(&m->runqueue[i]);
+	}
+	return NULL;
+}
+bool mlf_isempty(struct mlf_queue *m){
+	int ret = 0;
+	for (int i=0; i<NUM_PRIORITIES; i++)
+		ret = ret & threadlist_isempty(&m->runqueue[i]);
+	return ret;
+}
+unsigned mlf_count(struct mlf_queue *m){
+	unsigned count=0;
+	for (int i=0; i<NUM_PRIORITIES; i++)
+		count += m->runqueue[i].tl_count;
+	return count;
+}
 
 ////////////////////////////////////////////////////////////
 
@@ -174,6 +211,8 @@ thread_create(const char *name)
 	for (i=0; i<MAX_FILE_DESCRIPTOR; i++)
 		thread->fd[i] = NULL;
 
+	thread->priority = 0;
+
 	return thread;
 }
 
@@ -205,7 +244,8 @@ cpu_create(unsigned hardware_number)
 	c->c_hardclocks = 0;
 
 	c->c_isidle = false;
-	threadlist_init(&c->c_runqueue);
+	for (int i=0; i<NUM_PRIORITIES; i++) // TODO: abstract to new function?
+		threadlist_init(&c->c_mlf_runqueue.runqueue[i]);
 	spinlock_init(&c->c_runqueue_lock);
 
 	c->c_ipi_pending = 0;
@@ -331,9 +371,11 @@ thread_panic(void)
 	 * to.  Instead, blat the list structure by hand, and take the
 	 * risk that it might not be quite atomic.
 	 */
-	curcpu->c_runqueue.tl_count = 0;
-	curcpu->c_runqueue.tl_head.tln_next = NULL;
-	curcpu->c_runqueue.tl_tail.tln_prev = NULL;
+	for (int i=0; i<NUM_PRIORITIES; i++){
+		curcpu->c_mlf_runqueue.runqueue[i].tl_count = 0;
+		curcpu->c_mlf_runqueue.runqueue[i].tl_head.tln_next = NULL;
+		curcpu->c_mlf_runqueue.runqueue[i].tl_tail.tln_prev = NULL;
+	}
 
 	/*
 	 * Ideally, we want to make sure sleeping threads don't wake
@@ -563,7 +605,7 @@ thread_make_runnable(struct thread *target, bool already_have_lock)
 	}
 
 	isidle = targetcpu->c_isidle;
-	threadlist_addtail(&targetcpu->c_runqueue, target);
+	mlf_add_thread(&targetcpu->c_mlf_runqueue, target);
 	if (isidle) {
 		/*
 		 * Other processor is idle; send interrupt to make
@@ -740,7 +782,7 @@ thread_switch(threadstate_t newstate, struct wchan *wc)
 	spinlock_acquire(&curcpu->c_runqueue_lock);
 
 	/* Micro-optimization: if nothing to do, just return */
-	if (newstate == S_READY && threadlist_isempty(&curcpu->c_runqueue)) {
+	if (newstate == S_READY && mlf_isempty(&curcpu->c_mlf_runqueue)) {
 		spinlock_release(&curcpu->c_runqueue_lock);
 		splx(spl);
 		return;
@@ -754,6 +796,8 @@ thread_switch(threadstate_t newstate, struct wchan *wc)
 		thread_make_runnable(cur, true /*have lock*/);
 		break;
 	    case S_SLEEP:
+	    if (cur->priority > 0) // When a thread blocks, increase its priority upon waking
+	    	cur->priority--;
 		cur->t_wchan_name = wc->wc_name;
 		/*
 		 * Add the thread to the list in the wait channel, and
@@ -798,7 +842,7 @@ thread_switch(threadstate_t newstate, struct wchan *wc)
 	/* The current cpu is now idle. */
 	curcpu->c_isidle = true;
 	do {
-		next = threadlist_remhead(&curcpu->c_runqueue);
+		next = mlf_rem_head(&curcpu->c_mlf_runqueue);
 		if (next == NULL) {
 			spinlock_release(&curcpu->c_runqueue_lock);
 			cpu_idle();
@@ -997,6 +1041,9 @@ thread_exit(void)
 void
 thread_yield(void)
 {
+	//TODO: return with probability inversely proportional to priority
+	if (curthread->priority < NUM_PRIORITIES-1)
+		curthread->priority++; // Decrease priority when a process uses whole time slice
 	thread_switch(S_READY, NULL);
 }
 
@@ -1049,9 +1096,9 @@ thread_consider_migration(void)
 	for (i=0; i<numcpus; i++) {
 		c = cpuarray_get(&allcpus, i);
 		spinlock_acquire(&c->c_runqueue_lock);
-		total_count += c->c_runqueue.tl_count;
+		total_count += mlf_count(&c->c_mlf_runqueue);
 		if (c == curcpu->c_self) {
-			my_count = c->c_runqueue.tl_count;
+			my_count = mlf_count(&c->c_mlf_runqueue);
 		}
 		spinlock_release(&c->c_runqueue_lock);
 	}
@@ -1065,7 +1112,7 @@ thread_consider_migration(void)
 	threadlist_init(&victims);
 	spinlock_acquire(&curcpu->c_runqueue_lock);
 	for (i=0; i<to_send; i++) {
-		t = threadlist_remtail(&curcpu->c_runqueue);
+		t = mlf_rem_tail(&curcpu->c_mlf_runqueue); // TODO: enter new CPU with same priority?
 		threadlist_addhead(&victims, t);
 	}
 	spinlock_release(&curcpu->c_runqueue_lock);
@@ -1076,10 +1123,10 @@ thread_consider_migration(void)
 			continue;
 		}
 		spinlock_acquire(&c->c_runqueue_lock);
-		while (c->c_runqueue.tl_count < one_share && to_send > 0) {
+		while (mlf_count(&c->c_mlf_runqueue) < one_share && to_send > 0) {
 			t = threadlist_remhead(&victims);
-			/*
-			 * Ordinarily, curthread will not appear on
+			
+			 /* Ordinarily, curthread will not appear on
 			 * the run queue. However, it can under the
 			 * following circumstances:
 			 *   - it went to sleep;
@@ -1100,6 +1147,7 @@ thread_consider_migration(void)
 			 * skip it. Then it goes back on our own run
 			 * queue below.
 			 */
+			 
 			if (t == curthread) {
 				threadlist_addtail(&victims, t);
 				to_send--;
@@ -1107,7 +1155,7 @@ thread_consider_migration(void)
 			}
 
 			t->t_cpu = c;
-			threadlist_addtail(&c->c_runqueue, t);
+			mlf_add_thread(&c->c_mlf_runqueue, t);
 			DEBUG(DB_THREADS,
 			      "Migrated thread %s: cpu %u -> %u",
 			      t->t_name, curcpu->c_number, c->c_number);
@@ -1131,7 +1179,7 @@ thread_consider_migration(void)
 	if (!threadlist_isempty(&victims)) {
 		spinlock_acquire(&curcpu->c_runqueue_lock);
 		while ((t = threadlist_remhead(&victims)) != NULL) {
-			threadlist_addtail(&curcpu->c_runqueue, t);
+			mlf_add_thread(&curcpu->c_mlf_runqueue, t);
 		}
 		spinlock_release(&curcpu->c_runqueue_lock);
 	}

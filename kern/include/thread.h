@@ -141,6 +141,9 @@ struct thread {
 	struct file_table **fd;
 
 	struct semaphore *waiting_on;
+
+	// Scheduling variables
+	int priority;  // 0 is highest priority, MAX_PRIORITY is lowest
 };
 
 
