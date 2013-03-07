@@ -39,7 +39,7 @@ int sys___getcwd(userptr_t buf, size_t buf_len, int *err){
 	if (*err)
 		return -1;
 
-	*err = copyout(uio.uio_iov->iov_kbase,buf,buf_len);
+	*err = copyout((const void*)path,buf,buf_len);
 	if (*err)
 		return -1;
 	return uio.uio_offset;
