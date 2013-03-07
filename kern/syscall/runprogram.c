@@ -150,7 +150,10 @@ runprogram(char *progname, char **args, int argc)
     	got[i] = strlen(args[i]) + 1; // Need +1 to account for /0
     }
 
-	// TODO: HACK
+    /* We enforce that the kernel is only allowed to start ONE user process
+     * directly through runprogram with PID_MIN as its pid. Thereafter any
+     * new user process needs to be forked from existing ones.
+     */
 	KASSERT(process_table[PID_MIN] == NULL);
 	curthread->pid = PID_MIN;
 

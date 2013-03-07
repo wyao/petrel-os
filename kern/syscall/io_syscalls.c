@@ -14,8 +14,6 @@
 #include <kern/seek.h>
 #include <kern/stat.h>
 
-//TODO Use PATH_MAX?
-
 int
 sys_open(userptr_t filename, int flags, int *err) {
   int i,result;
@@ -44,7 +42,7 @@ sys_open(userptr_t filename, int flags, int *err) {
 
       curthread->fd[i]->mutex = lock_create("mutex");
       if (curthread->fd[i]->mutex == NULL){
-        *err = ENOMEM; //TODO unsure what errno to use
+        *err = ENOMEM;
         goto err2;
       }
 
@@ -64,7 +62,6 @@ sys_open(userptr_t filename, int flags, int *err) {
         goto err4;
       }
       // Return value is 0 for success
-      // TODO: Should this be the same errno?
       *err = vfs_open((char *)filename,flags,0664,&(curthread->fd[i]->file));
       if (*err){
         goto err4;

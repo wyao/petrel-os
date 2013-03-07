@@ -2,6 +2,14 @@ Assignment 2 Write Up
 =====================
 ###Aidan & Willie: White-Faced Storm Petrel-OS###
 
+Ammendment (After Having Completed the Assignment)
+==================================================
+This is a new section that we are adding now that we've completed A2 with the goals of:
+1.  Documenting important design decisions/constraints/assumptions of our implementation. Some might be new, others might be from our original design doc.
+2.  Give our perspective on our implementation in hopes that it may help the grading of this assignment/improve the feedback we recieve.
+
+Global lock on exec
+
 Table of Contents
 =================
 1.    Overview
