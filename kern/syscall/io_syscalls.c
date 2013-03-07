@@ -80,6 +80,7 @@ sys_open(userptr_t filename, int flags, int *err) {
         lock_destroy(curthread->fd[i]->mutex);
       err2:
         kfree(curthread->fd[i]);
+        curthread->fd[i] = NULL;
       err1:
         return -1;
     }
