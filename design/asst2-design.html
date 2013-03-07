@@ -77,7 +77,6 @@ table.text th, table.text td {
 </style>
 
 
-
 <h1>Assignment 2 Write Up</h1>
 
 <h3>Aidan &amp; Willie: White-Faced Storm Petrel-OS</h3>
@@ -355,7 +354,7 @@ This method will require us to track the amount of time the job has been in the 
 <p>The first 4 bytes of e_indent, the array of bytes that specifies how the file should be interpreted, are 3x7f, 'E', 'L', 'F', respectively. The subsequent fields indicate the file class, data encoding, ELF version, OS/syscall ABI identification, and syscall ABI version.</p></li>
 <li><p>What is the difference between <code>UIO_USERISPACE</code> and <code>UIO_USERSPACE</code>? When should one use <code>UIO_SYSSPACE</code> instead?</p>
 
-<p><code>UIO_USERISPACE</code> and <code>UIO_USERSPACE</code> stand for user process code and user process data respectively. One should use UIO_SYSSPACE when writing data to a kernel buffer, perhaps from a vnode.</p></li>
+<p><code>UIO_USERISPACE</code> and <code>UIO_USERSPACE</code> stand for user process code and user process data respectively. One should use UIO_SYSSPACE when writing data to a kernel buffer.</p></li>
 <li><p>Why can the struct uio that is used to read in a segment be allocated on the stack in load_segment() (i.e., where does the memory read actually go)?</p>
 
 <p>The uio struct contains a iovec, which wraps a buffer that is the destination of the memory read.  The uio, however, also specifies the address space as that of the current thread, so the read happen into the user address space. </p></li>
@@ -367,10 +366,10 @@ This method will require us to track the amount of time the job has been in the 
 <p><code>enter_new_process()</code>, located in trap.c, forces the processor to switch into usermode. It is machine dependent--Passing argc/argv may use additional stack space on some other platforms, but not on mips.</p></li>
 <li><p>In what file are copyin and copyout defined? memmove? Why can't copyin and copyout be implemented as simply as memmove?</p>
 
-<p>copyin() and copyout() are defined in copyinout.c and memmove() is defined in memmove.c. copyin()/copyout() copies block of memory across user/kernel addresses, something that memmove() is not capable of doing.</p></li>
+<p>copyin() and copyout() are defined in copyinout.c and memmove() is defined in memmove.c. copyin()/copyout() copies block of memory across user/kernel addresses ensuring that user pointers are not accessing offlimit addresses, something that memmove() is not capable of doing.</p></li>
 <li><p>What (briefly) is the purpose of userptr_t?</p>
 
-<p>It is used for checking that the provided block is within the proper userspace region.</p></li>
+<p>It is used for noting that the provided address needs to be within the proper userspace region.</p></li>
 </ol>
 
 <p>Trap/Syscall Questions</p>
@@ -403,3 +402,4 @@ This method will require us to track the amount of time the job has been in the 
 
 <p>The first four arguments must be passed in register a0-3, and 64-bit arguments must be in aligned registers.  This means arg0 of lseek() will be in a0, arg1 in registers a2 and a2 with register a1 unused.  The final argument will be found in the user level stack at sp+16.  The 64-bit return value will be stored across registers v0 and v1.</p></li>
 </ol>
+

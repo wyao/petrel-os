@@ -253,7 +253,7 @@ ELF Questions
 
 2. What is the difference between `UIO_USERISPACE` and `UIO_USERSPACE`? When should one use `UIO_SYSSPACE` instead?
 
-    `UIO_USERISPACE` and `UIO_USERSPACE` stand for user process code and user process data respectively. One should use UIO_SYSSPACE when writing data to a kernel buffer, perhaps from a vnode.
+    `UIO_USERISPACE` and `UIO_USERSPACE` stand for user process code and user process data respectively. One should use UIO_SYSSPACE when writing data to a kernel buffer.
 
 3. Why can the struct uio that is used to read in a segment be allocated on the stack in load_segment() (i.e., where does the memory read actually go)?
 
@@ -269,11 +269,11 @@ ELF Questions
 
 6. In what file are copyin and copyout defined? memmove? Why can't copyin and copyout be implemented as simply as memmove?
 
-    copyin() and copyout() are defined in copyinout.c and memmove() is defined in memmove.c. copyin()/copyout() copies block of memory across user/kernel addresses, something that memmove() is not capable of doing.
+    copyin() and copyout() are defined in copyinout.c and memmove() is defined in memmove.c. copyin()/copyout() copies block of memory across user/kernel addresses ensuring that user pointers are not accessing offlimit addresses, something that memmove() is not capable of doing.
 
 7. What (briefly) is the purpose of userptr_t?
 
-    It is used for checking that the provided block is within the proper userspace region.
+    It is used for noting that the provided address needs to be within the proper userspace region.
 
 
 Trap/Syscall Questions
