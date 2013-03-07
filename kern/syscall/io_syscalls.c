@@ -92,7 +92,8 @@ sys_open(userptr_t filename, int flags, int *err) {
 
 int 
 sys_close(int fd) {
-  // TODO: should we check if the fd table is non-null or can we assume?
+  int i;
+  struct file_table *tmp;
   if (fd < 0 || fd >= MAX_FILE_DESCRIPTOR)
     return EBADF;
   if (curthread->fd[fd] == NULL)
@@ -109,10 +110,17 @@ sys_close(int fd) {
     lock_release(curthread->fd[fd]->mutex);
     lock_destroy(curthread->fd[fd]->mutex);
     kfree(curthread->fd[fd]);
-    curthread->fd[fd] = NULL;
+
+    // Clear all references to this table
+    tmp = curthread->fd[fd];
+    for (i=0; i<MAX_FILE_DESCRIPTOR; i++){
+      if (curthread->fd[i] == tmp)
+        curthread->fd[fd] = NULL;
+    }
   }
   else
     lock_release(curthread->fd[fd]->mutex);
+    curthread->fd[fd] = NULL;
   return 0;
 }
 
@@ -197,15 +205,15 @@ sys_dup2(int oldfd, int newfd, int *err){
     if (curthread->fd[i] != NULL)
       j++;
   }
-  if (j==MAX_FILE_DESCRIPTOR){
-    *err = EMFILE;
-    return -1;
-  }
   if (curthread->fd[newfd] != NULL){
     *err = sys_close(newfd);
+    if (*err)
+      return -1;
   }
   curthread->fd[newfd] = curthread->fd[oldfd];
+  lock_acquire(curthread->fd[newfd]->mutex);
   curthread->fd[newfd]->refcnt++;
+  lock_release(curthread->fd[newfd]->mutex);
   return newfd;
 }
 
