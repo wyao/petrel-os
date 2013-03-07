@@ -134,7 +134,7 @@ syscall(struct trapframe *tf)
 
         case SYS_lseek:
         join32to64(tf->tf_a2,tf->tf_a3,&ar2);
-        copyin((userptr_t)tf->tf_sp,&ar3,sizeof(uint32_t));
+        copyin((const_userptr_t)(tf->tf_sp+16),&ar3,sizeof(uint32_t));
         ret64 = sys_lseek((int)tf->tf_a0,(off_t)ar2,(int)ar3,&err);
         split64to32(ret64,(uint32_t *)&retval,&retval2);
         if (!err)
