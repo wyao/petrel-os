@@ -2,31 +2,81 @@ Assignment 2 Write Up
 =====================
 ###Aidan & Willie: White-Faced Storm Petrel-OS###
 
-Ammendment (After Having Completed the Assignment)
-==================================================
+New Section
+===========
 This is a new section that we are adding now that we've completed A2 with the goals of:
+
 1.  Documenting important design decisions/constraints/assumptions of our implementation. Some might be new, others might be from our original design doc.
 2.  Give our perspective on our implementation in hopes that it may help the grading of this assignment/improve the feedback we recieve.
 
-Global lock on exec
+Processes
+---------
+We make the assumption that only 1 user program can be launched using `runprogram()` so that we can always assign that initial program with a pid of `PID_MIN` (currently 2). All additional user programs must be forked. The viable pid for user programs are `PID_MIN` to `PID_MAX` inclusive.
+
+Exec
+----
+We use a `global_exec_lock` to ensure that only 1 exec syscall can be performed at one time due to memory considerations. We following the file name, path name, and total argument length max limited defined in limit.h:
+
+    /* Longest filename (without directory) not including null terminator */
+    #define __NAME_MAX      255
+
+    /* Longest full path name */
+    #define __PATH_MAX      1024
+
+    /* Max bytes for an exec function */
+    #define __ARG_MAX       (64 * 1024)
+
+Fild Descriptors
+----------------
+Each process is limited to 16 file descriptors (defined in `__FD_MAX`) with 0-2 assigned to stdio by default. The 16 availalbe file descriptors must be between 0-15 inclusive.
+
+Scheduling
+----------
+We ultimately decided to implement a multi-level feedback queue styled after the Solaris scheduler for our operating system.  This means each processor, rather than having a single queue for threads, would have NUM_PRIORITIES queues that were declared as follows:
+
+    struct mlf_queue {
+        struct threadlist runqueue[NUM_PRIORITIES];
+    };
+
+Operations on these arrays of queues were locked with the CPUs spinlock, just like the operations on the round-robin scheduler's single queues.  We implemented the following helper functions making use of the threadlist helper functions declared in cpu.h:
+
+    void mlf_add_thread(struct mlf_queue *m, struct thread *t);
+    struct thread *mlf_rem_head(struct mlf_queue *m);
+    struct thread *mlf_rem_tail(struct mlf_queue *m);
+    bool mlf_isempty(struct mlf_queue *m);
+    unsigned mlf_count(struct mlf_queue *m);
+
+Our scheduler operated as follows:
+Priorities ranged from 0 (highest) to NUM_PRIORITIES-1 (lowest).  Threads entered by default at the highest priority.  Any time a thread was caused to yield by using its entire timeslice, it would be demoted one priority level.  This required modifying `thread_yield()`.  When a thread blocked by going to sleep, it would be incremented one priority level.  This required modifying `thread_switch()`.  
+
+The rationale for this was that threads that frequently block on IO should be allowed to run often to input their requests, while computational jobs which will run for long periods of time will have to wait.  
+
+We modified `thread_make_runnable()` to insert into the correct priority queue level, and we additionally modified `thread_consider_migration()` to move threads from the tail of the lowest occupied priority queue into another CPU at the same priority level. 
+
+Reaping Policy
+--------------
+For our reaping policy, we ended up opting out of a dedicated reaping thread and instead extending the reaping framework existing between the `thread_exit()` and `exorcise()` functions.  We modified `exorcise()` so that only threads with valid `parent_pid` (in our implementation, pid > 0) would be reaped.  
+
+While `parent_pid` is initialized to 0, and as such is invalid, we chose to set a `parent_pid` of -1 for orphaned user processes, although the exorcise code makes no distinction between kernel threads that never acquired a parent and child threads that have been marked as orphans.  When a parent waits for a child, it will set said child's `parent_pid` to -1 since it is effectively orphaned as it has exited and no processes will wait on it.  Similarly, when a parent process exits, it will mark all its children as orphans by setting their `parent_pid` to -1.  
 
 Known Issues
 ------------
-FAILURE: open null: with bad flags: No such file or directory
-bad file numbers
+###badcall###
+All badcall tests relevant to asst2 pass individually. However we require at least 4BM of RAM to run all the asst2 tests (by pressing `2`) without running out of memory. Once we do run out memory, we get the following memory related failures in various badcalls: 
 
-bad_lseek.c passes when run individually, but when running all asst2 badcalls:
-testbin/badcall: UH-OH: opening null: failed: No such file or directory
+    testbin/badcall: UH-OH: creating badcallfile: failed: Out of memory
+    testbin/badcall: FAILURE: write with NULL buffer: Bad file number
 
-2nd run, open:
-testbin/badcall: FAILURE: open null: with bad flags: No such file or directory
+We don't believe the above issue to be a bug as we suspect this has primarily to do with the large memory leak of dumbvm. However we do have a bug (which we believe to be the same bug) in the following forms:
 
-By the 3rd run there are a lot of out of memory errors (to be expected)
-we also get (which assume to be related and not an actual failure):
-testbin/badcall: UH-OH: creating badcallfile: failed: Out of memory
-testbin/badcall: FAILURE: write with NULL buffer: Bad file number
+    testbin/badcall: UH-OH: opening null: failed: No such file or directory
+    testbin/badcall: FAILURE: open null: with bad flags: No such file or directory
 
-bigexec panics on the largest input (1000 8-letter words) due to:
+When badcall tests are run individually, this never happens. However we can reliably reproduce this by running all the asst2 badcall tests, and it will manifest itself during lseek during the first iteration, and in multiple locations during subsequent locations.
+
+###bigexec###
+We adjusted our DUMBVM_STACKPAGES to 18 pages to run this test. Our kernel panics on the largest input (1000 8-letter words):
+
     0xffffffff8002bf04 in copystr (dest=0x80283800 "\200(4", src=0x40280c <Address 0x40280c out of bounds>,
         maxlen=1024, stoplen=1024, gotlen=0x80040eac) at ../../vm/copyinout.c:241
 
