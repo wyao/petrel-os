@@ -2,8 +2,8 @@ Assignment 2 Write Up
 =====================
 ###Aidan & Willie: White-Faced Storm Petrel-OS###
 
-New Section
-===========
+Updates (For Grading)
+=====================
 This is a new section that we are adding now that we've completed A2 with the goals of:
 
 1.  Documenting important design decisions/constraints/assumptions of our implementation. Some might be new, others might be from our original design doc.
@@ -79,6 +79,9 @@ We adjusted our DUMBVM_STACKPAGES to 18 pages to run this test. Our kernel panic
 
     0xffffffff8002bf04 in copystr (dest=0x80283800 "\200(4", src=0x40280c <Address 0x40280c out of bounds>,
         maxlen=1024, stoplen=1024, gotlen=0x80040eac) at ../../vm/copyinout.c:241
+
+###Memory Leaks###
+We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.
 
 Table of Contents
 =================

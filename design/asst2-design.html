@@ -77,12 +77,11 @@ table.text th, table.text td {
 </style>
 
 
-
 <h1>Assignment 2 Write Up</h1>
 
 <h3>Aidan &amp; Willie: White-Faced Storm Petrel-OS</h3>
 
-<h1>New Section</h1>
+<h1>Updates (For Grading)</h1>
 
 <p>This is a new section that we are adding now that we've completed A2 with the goals of:</p>
 
@@ -169,6 +168,10 @@ testbin/badcall: FAILURE: open null: with bad flags: No such file or directory
 <pre><code>0xffffffff8002bf04 in copystr (dest=0x80283800 "\200(4", src=0x40280c &lt;Address 0x40280c out of bounds&gt;,
     maxlen=1024, stoplen=1024, gotlen=0x80040eac) at ../../vm/copyinout.c:241
 </code></pre>
+
+<h3>Memory Leaks</h3>
+
+<p>We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.</p>
 
 <h1>Table of Contents</h1>
 
