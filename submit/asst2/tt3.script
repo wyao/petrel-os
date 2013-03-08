@@ -1,0 +1,52 @@
+Script started on Fri Mar  8 04:56:39 2013
+]0;jharvard@appliance:~/cs161/os161/submit/asst2[?1034hjharvard@appliance (~/cs161/os161/submit/asst2): cd ~/cs161/root
+]0;jharvard@appliance:~/cs161/rootjharvard@appliance (~/cs161/root): sys161 kernel
+sys161: System/161 release 1.99.05, compiled Jan 30 2013 01:02:01
+
+OS/161 base system version 1.99.05
+Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+   President and Fellows of Harvard College.  All rights reserved.
+
+White-Faced Storm Petrel-OS ver. 0 (ASST2 #266)
+
+3880k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS r3000
+cpu1: MIPS r3000
+cpu2: MIPS r3000
+cpu3: MIPS r3000
+OS/161 kernel [? for menu]: tt3
+Starting thread test 3 (5 [sleepalots], 2 {computes}, 1 waker)
+[4][0][1][2][3]{0: 199}{1: 73}[0][3][4][0][1][3]{0: 141}{1: 205}[3][2][0][3][4][3][2]{0: 30}{1: 245}[1][0][2][3][1][3]{0: 39}[2]{1: 130}[4][1][0][2][3][0][4][1][2]{0: 97}{1: 151}[3][0][2][4][1][3][4]{0: 213}[1]{1: 130}[3][0][4][3][1][2][0][3]{0: 27}{1: 79}[1][2][0][3][4][1][2]{0: 28}{1: 251}[3][0][4][1][3][2]{0: 85}[0]{1: 254}[1][4][3][0][1]{0: 123}[4][4][4][0][2][3][4][1][4][4][2][4][4][4][0][3][1][2][0][1][2][0][0][2][2][0][2]{1: 250}[1][2][1][1]
+Thread test 3 done
+Operation took 6.413798880 seconds
+OS/161 kernel [? for menu]: p s /sbin/poweroff
+Shutting down.
+cpu1: offline.
+The system is halted.
+cpu2: offline.
+cpu3: offline.
+sys161: 751619277577535619 cycles (166228597 run, 751619277411307022 global-idle)
+sys161:   cpu0: 165711228 kern, 17 user, 517352 idle)
+sys161:   cpu1: 157025025 kern, 0 user, 9203572 idle)
+sys161:   cpu2: 482241 kern, 0 user, 165746356 idle)
+sys161:   cpu3: 238237 kern, 0 user, 165990360 idle)
+sys161: 3475 irqs 5 exns 0r/0w disk 23r/1292w console 8r/0w/3m emufs 0r/0w net
+sys161: Elapsed real time: 31.115154 seconds (2.41561e+10 mhz)
+sys161: Elapsed virtual time: 31.101424777 seconds (25 mhz)
+]0;jharvard@appliance:~/cs161/rootjharvard@appliance (~/cs161/root): exit
+
+Script done on Fri Mar  8 04:57:20 2013

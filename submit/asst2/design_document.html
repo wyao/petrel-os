@@ -1,0 +1,499 @@
+<style>
+body {
+    line-height: 1.4em;
+    color: black;
+        padding:1em;
+        margin:auto;
+        max-width:42em;
+}
+
+li {
+    color: black;
+}
+
+h1,
+h2, 
+h3, 
+h4, 
+h5, 
+h6 {
+    border: 0 none !important;
+}
+
+h1 {    
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    border-bottom: 2px solid #000080 !important;
+}
+
+h2 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;    
+    border-bottom: 2px solid #000080 !important;    
+}
+
+pre {
+    background-color: #f8f8f8;    
+    border: 1px solid #2f6fab;
+    border-radius: 3px;
+    overflow: auto;
+    padding: 5px;
+}
+
+pre code {
+    background-color: inherit;
+    border: none;    
+    padding: 0;
+}
+
+code {
+    background-color: #ffffe0;
+    border: 1px solid orange;
+    border-radius: 3px;
+    padding: 0 0.2em;
+}
+
+a {
+    text-decoration: underline; 
+}
+
+ul, ol {
+    padding-left: 30px;
+}
+
+li {
+    margin: 0.2em 0 0 0em; padding: 0px;
+}
+
+em {
+    color: #b05000;
+}
+
+table.text th, table.text td {
+    vertical-align: top;
+    border-top: 1px solid #ccc;
+    padding:5px;
+}
+</style>
+
+
+<h1>Assignment 2 Write Up</h1>
+
+<h3>Aidan &amp; Willie: White-Faced Storm Petrel-OS</h3>
+
+<h1>Updates (For Grading)</h1>
+
+<p>This is a new section that we are adding now that we've completed A2 with the goals of:</p>
+
+<ol>
+<li>Documenting important design decisions/constraints/assumptions of our implementation. Some might be new, others might be from our original design doc.</li>
+<li>Give our perspective on our implementation in hopes that it may help the grading of this assignment/improve the feedback we recieve.</li>
+</ol>
+
+<h2>Processes</h2>
+
+<p>We make the assumption that only 1 user program can be launched using <code>runprogram()</code> so that we can always assign that initial program with a pid of <code>PID_MIN</code> (currently 2). All additional user programs must be forked. The viable pid for user programs are <code>PID_MIN</code> to <code>PID_MAX</code> inclusive.</p>
+
+<h2>Exec</h2>
+
+<p>We use a <code>global_exec_lock</code> to ensure that only 1 exec syscall can be performed at one time due to memory considerations. We following the file name, path name, and total argument length max limited defined in limit.h:</p>
+
+<pre><code>/* Longest filename (without directory) not including null terminator */
+#define __NAME_MAX      255
+
+/* Longest full path name */
+#define __PATH_MAX      1024
+
+/* Max bytes for an exec function */
+#define __ARG_MAX       (64 * 1024)
+</code></pre>
+
+<h2>File Descriptors</h2>
+
+<p>Each process is limited to 16 file descriptors (defined in <code>__FD_MAX</code>) with 0-2 assigned to stdio by default. The 16 availalbe file descriptors must be between 0-15 inclusive.</p>
+
+<h2>Scheduling</h2>
+
+<p>We ultimately decided to implement a multi-level feedback queue styled after the Solaris scheduler for our operating system.  This means each processor, rather than having a single queue for threads, would have NUM_PRIORITIES queues that were declared as follows:</p>
+
+<pre><code>struct mlf_queue {
+    struct threadlist runqueue[NUM_PRIORITIES];
+};
+</code></pre>
+
+<p>Operations on these arrays of queues were locked with the CPUs spinlock, just like the operations on the round-robin scheduler's single queues.  We implemented the following helper functions making use of the threadlist helper functions declared in cpu.h:</p>
+
+<pre><code>void mlf_add_thread(struct mlf_queue *m, struct thread *t);
+struct thread *mlf_rem_head(struct mlf_queue *m);
+struct thread *mlf_rem_tail(struct mlf_queue *m);
+bool mlf_isempty(struct mlf_queue *m);
+unsigned mlf_count(struct mlf_queue *m);
+</code></pre>
+
+<p>Our scheduler operated as follows:
+Priorities ranged from 0 (highest) to NUM_PRIORITIES-1 (lowest).  Threads entered by default at the highest priority.  Any time a thread was caused to yield by using its entire timeslice, it would be demoted one priority level.  This required modifying <code>thread_yield()</code>.  When a thread blocked by going to sleep, it would be incremented one priority level.  This required modifying <code>thread_switch()</code>.  </p>
+
+<p>The rationale for this was that threads that frequently block on IO should be allowed to run often to input their requests, while computational jobs which will run for long periods of time will have to wait.  </p>
+
+<p>We modified <code>thread_make_runnable()</code> to insert into the correct priority queue level, and we additionally modified <code>thread_consider_migration()</code> to move threads from the tail of the lowest occupied priority queue into another CPU at the same priority level. </p>
+
+<h2>Reaping Policy</h2>
+
+<p>For our reaping policy, we ended up opting out of a dedicated reaping thread and instead extending the reaping framework existing between the <code>thread_exit()</code> and <code>exorcise()</code> functions.  We modified <code>exorcise()</code> so that only threads with valid <code>parent_pid</code> (in our implementation, pid > 0) would be reaped.  </p>
+
+<p>While <code>parent_pid</code> is initialized to 0, and as such is invalid, we chose to set a <code>parent_pid</code> of -1 for orphaned user processes, although the exorcise code makes no distinction between kernel threads that never acquired a parent and child threads that have been marked as orphans.  When a parent waits for a child, it will set said child's <code>parent_pid</code> to -1 since it is effectively orphaned as it has exited and no processes will wait on it.  Similarly, when a parent process exits, it will mark all its children as orphans by setting their <code>parent_pid</code> to -1.  </p>
+
+<h2>Known Issues</h2>
+
+<h3>badcall</h3>
+
+<p>All badcall tests relevant to asst2 pass individually. However we require at least 4BM of RAM to run all the asst2 tests (by pressing <code>2</code>) without running out of memory. Once we do run out memory, we get the following memory related failures in various badcalls: </p>
+
+<pre><code>testbin/badcall: UH-OH: creating badcallfile: failed: Out of memory
+testbin/badcall: FAILURE: write with NULL buffer: Bad file number
+</code></pre>
+
+<p>We don't believe the above issue to be a bug as we suspect this has primarily to do with the large memory leak of dumbvm. However we do have a bug (which we believe to be the same bug) in the following forms:</p>
+
+<pre><code>testbin/badcall: UH-OH: opening null: failed: No such file or directory
+testbin/badcall: FAILURE: open null: with bad flags: No such file or directory
+</code></pre>
+
+<p>When badcall tests are run individually, this never happens. However we can reliably reproduce this by running all the asst2 badcall tests, and it will manifest itself during lseek during the first iteration, and in multiple locations during subsequent locations.</p>
+
+<h3>bigexec</h3>
+
+<p>We adjusted our DUMBVM_STACKPAGES to 18 pages to run this test. Our kernel panics on the largest input (1000 8-letter words):</p>
+
+<pre><code>0xffffffff8002bf04 in copystr (dest=0x80283800 "\200(4", src=0x40280c &lt;Address 0x40280c out of bounds&gt;,
+    maxlen=1024, stoplen=1024, gotlen=0x80040eac) at ../../vm/copyinout.c:241
+</code></pre>
+
+<h3>Memory Leaks</h3>
+
+<p>We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.  </p>
+
+<p>Note that we don't explicitly call <code>exorcise()</code> outside of the <code>thread_switch()</code> routine. So not all memory will be cleaned up immediately (during the <code>wait_pid</code> call) until the next thread switch.</p>
+
+<h1>Table of Contents</h1>
+
+<ol>
+<li>Overview
+<ol><li>Process
+<ol><li>Data Structures</li>
+<li>Reaping Policy</li>
+<li>Helper Functions</li></ol></li>
+<li>File Descriptors
+<ol><li>Data Structures</li></ol></li></ol></li>
+<li>Topics
+<ol><li>File Descriptors
+<ol><li>open</li>
+<li>read</li>
+<li>write</li>
+<li>lseek</li>
+<li>close</li>
+<li>dup2</li></ol></li>
+<li>fork</li>
+<li>execv</li>
+<li>waitpid/exit
+<ol><li>waitpid</li>
+<li>exit</li></ol></li>
+<li>Other System Calls
+<ol><li>chdir</li>
+<li>getcwd</li>
+<li>getpid</li>
+<li>kill_curthread</li></ol></li>
+<li>Scheduling</li>
+<li>Synchonization Issues</li></ol></li>
+<li>Plan of Action &amp; Credit</li>
+<li>Code Reading Repsonses</li>
+</ol>
+
+<h1>1. Overview</h1>
+
+<h2>1.1 Processes</h2>
+
+<p>For the sake of designing for correctness first, we have decided to enforce one thread per process with no plan of ever implementing multiple threads per process. This design decision allows us to add new process fields directly on the existing thread struct. By trading away extensibility, we avoid having to move existing thread struct fields that traditionally belong to a process, which we expect to break portions of the existing code. Thus, we will modify the existing thread struct as follows:</p>
+
+<pre><code>struct thread{
+    // Old thread properties here
+
+    // CV that other processes will wait on for "wait_pid"
+    // and will be broadcasted over in "exit"
+    struct cv *waiting_on;
+    struct lock *cv_lock;
+
+    // Fields that belong to a process
+    int pid;
+    int priority;
+    int parent_pid;
+    int owner;
+    int exit_status;
+
+    // Linked list of the child PIDs
+    struct pid_list *children;
+
+    // Scheduling variables
+    struct times *recent_runtime;
+
+    //File descriptor indexed array of file table addresses
+    // This will be statically allocated
+    struct ft_ent *fd_table[MAX_FILE_DESCRIPTOR]; // Max of 16 was mentioned
+}
+</code></pre>
+
+<p>The above modified thread struct now also serves to represent our process control block (PCB) and is allocated in the kernel heap (where thread structs are already allocated now). To allow for constant time access into each PCB, we will also allocate in the kernel heap an array of pointers to each PCB that is indexed by the <code>pid</code>. We will call this array the process table. Since we want to avoid having to reallocate memory while preserving constant time access to our PCB, we have decided to set a hard limit <code>MAX_PROCESS</code> (which can be modified later) of 128 processes and allocate the process table array on startup, using 518 bytes of memory. We will modify <code>thread_create()</code>, and potentially <code>thread_boostrap()</code> and <code>cpu_create()</code>, to properly initalize the new process fields and process table. The process table will be declared as a global variable in thread.c as <code>struct thread process_table[MAX_PROCESS]</code>.</p>
+
+<p>PIDs are recycled by setting the address in the process table index by that <code>pid</code> to <code>NULL</code> when the process exits. When <code>thread_create()</code> is called, a <code>pid</code> is chosen randomly by the output of a random number mod <code>MAX_PROCESS</code>. If that <code>pid</code> is unavailable, we iterate the process table until we find an available <code>pid</code>, else we return with an error. The motivation for this design is to:  </p>
+
+<ol>
+<li>Choose the <code>pid</code> uniformly (more or less)</li>
+<li>Ensure that a <code>pid</code> is guaranteed to be assigned if one is available</li>
+<li>Use a simple approach that avoids additional data structures</li>
+</ol>
+
+<p>In our process struct, we need to maintain a list of all its children for reaping and waiting processes.  We also need to maintain a global list of orphaned processes in the kernel heap.  As such, we defined two pid list structs - synchronized and unsynchronized.  Since processes in our system are single-threaded, there is no need for synchronization and including a mutex primitive would merely waste space.  We chose to implement these as doubly linked lists, as each process is unlikely to have many children and an effectively reaping system should not allow many zombies to stay around, so a linear data structure should suffice.</p>
+
+<pre><code>struct synchronized_pid_list{
+    struct process_list *list;
+    struct lock *mutex;
+}
+
+struct pid_list{
+    struct process_list_ent *head;
+    struct process_list_ent *tail;
+}
+
+struct pid_list_ent{
+    int pid;
+    struct process_list_ent *next;
+}
+</code></pre>
+
+<p>We also maintain a linked list that will be used to track the times at which the process started running and ceased running over a recent interval.  We will use this data for our scheduling algorithm (discussed in 2.7) which uses the data of the process' recent runtime.</p>
+
+<pre><code>struct times{
+    struct t_interval *head;
+    struct t_interval *tail;
+}
+
+struct t_interval{
+    time_t start;
+    time_t end;
+}
+</code></pre>
+
+<h3>1.1.2 Reaping Policy</h3>
+
+<ul>
+<li>When a parent calls <code>waitpid()</code> on a child process (even after the child has already exited), the parent will reap the child before returning.</li>
+<li>When a parent process exits, it will reap all its zombie children and add the rest of its children to the global <code>orphan_list</code>, an instance of the <code>synchronized_pid_list</code> struct that lives in kernel memory, after acquiring its lock.</li>
+<li>A dedicated reaping thread will periodically acquire the lock of the orphan list and reap any children that have become zombies.  This thread will be spawned alongside the bootup thread in <code>thread_bootstrap</code>.</li>
+</ul>
+
+<p>A dedicated thread is maintained to 
+Orphan list: (Global)
+Will live in kernel memory
+Linked list with lock for synchronization
+When processes exit, non-zombie children will have their pids added to the list</p>
+
+<h3>1.1.3 Helper Functions</h3>
+
+<pre><code>int add_pid(struct pid_list *list, int pid)
+int remove_pid(struct pid_list *list, int pid)
+int contains_pid(struct pid_list *list, int pid)
+</code></pre>
+
+<h2>1.2 File Descriptors</h2>
+
+<p>File descriptors are integers that index into the array of file table entry addresses (<code>struct ft_ent **fd_table</code>) maintained by the PCB struct. File table entries (<code>ft_ent</code>) are allocated on the kernel heap. Each process maintains its own file table (although different processes may reference to the same <code>ft_ent</code> due to <code>fork()</code>), which is a loose term (since there is no actual implementation of it) that we use to refer to of all the file table entries (<code>ft_ent</code>) of that process. The file table entry maintains the reference to the vnode of the file that it associates with, the status (eg read or write), and the offset. The file table entry struct is defined as follows:</p>
+
+<pre><code>struct ft_ent{
+    struct vnode *file;
+    int status;
+    int offset;
+    int refcnt;
+
+    struct lock *mutex;
+}
+</code></pre>
+
+<p>The lock in the <code>ft_ent</code> struct exists because of the <code>fork()</code> system call.  Through <code>fork()</code>, multiple processes might be pointing to the same <code>ft_ent</code> from their file descriptor tables, and we must ensure that updates to the file permissions or position in the file must happen atomically (changes to the file itself should be handled by synchronization on the <code>vnode</code> struct itself).</p>
+
+<h1>2. Topics</h1>
+
+<h2>2.1 File descriptors</h2>
+
+<h3>2.1.1 <code>open(const char *filename, int flags, int mode)</code></h3>
+
+<p>Mode will be assumed to be <code>O_RDONLY</code> if not provided.  Look through the current PCB <code>fd_table</code> for an available index.  If no non-null indices exist, set errno to EMFILE and return -1.  Otherwise, allocate and initialize a <code>fd_ent</code> with the <code>refcnt</code> set to 1 and the <code>status</code> set to <code>mode</code>, and set the chosen index of the <code>fd_table</code> to point to it.  Call <code>vfs_open()</code> with the vnode pointer in the fd_ent struct and the user-provided <code>flags</code> argument.  If the VFS call succeeds, return the file descriptor, otherwise set the appropriate errno and return -1 after freeing the allocated struct.</p>
+
+<h3>2.1.2 <code>read(int fd, void *buf, size_t buflen</code></h3>
+
+<p>If <code>fd</code> is not in the range [0,MAXFDS), or the PCB <code>fd_table[fd]</code> is null, then set the errno to EBADF and return -1.  Obtain the lock on the <code>ft_ent</code>.  If the the mode of the <code>ft_ent</code> is WRONLY, release the lock, set the errno to EBADF and return -1.  Otherwise, build a <code>struct iovec</code> that contains the user supplied buffer and buffer length.  Create a <code>struct uio</code> and populate it with the <code>iovec</code>.  Set the <code>uio_segflg</code> to <code>UIO_USRSPACE</code>, the <code>uio_rw</code> to <code>UIO_READ</code>, the <code>uio_offset</code> to <code>ft_ent.offset</code>, and the address space to that of the current process.  Call <code>VOP_READ()</code> on the vnode and the iovec.  If the VFS call fails, set the appropriate error message and return -1.  Finally, set the <code>ft_ent.offset</code> to the <code>uio.resid</code> which was updated by the call to <code>VOP_READ()</code>, then release the lock and return the difference between the old and new offset.</p>
+
+<h3>2.1.3 <code>write(int fd, const void *buf, size_t nbytes)</code></h3>
+
+<p>If <code>fd</code> is not in the range [0,MAXFDS), or the PCB <code>fd_table[fd]</code> is null, then set the errno to EBADF and return -1.  Obtain the lock on the <code>ft_ent</code>.  If the the mode of the <code>ft_ent</code> is RDONLY, release the lock, set the errno to EBADF and return -1.  Otherwise, build a <code>struct iovec</code> that contains the user supplied buffer and buffer length.  Create a <code>struct uio</code> and populate it with the <code>iovec</code>.  Set the <code>uio_segflg</code> to <code>UIO_USERSPACE</code>, the <code>uio_rw</code> to <code>UIO_WRITE</code>, the <code>uio_offset</code> to <code>ft_ent.offset</code>, and the address space to that of the current process.  Call <code>VOP_WRITE()</code> on the vnode and the iovec.  If the VFS call fails, set the appropriate error message and return -1.  Finally, set the <code>ft_ent.offset</code> to the <code>uio.resid</code> which was updated by the call to <code>VOP_WRITE()</code>, then release the lock and return the difference between the old and new offset.</p>
+
+<h3>2.1.4 <code>lseek(int fd, off_t pos, int whence)</code></h3>
+
+<p>If <code>fd</code> is not in the range [0,MAXFDS), or the PCB <code>fd_table[fd]</code> is null, then set the errno to EBADF and return -1.  If <code>whence</code> is not <code>SEEK_SET</code>, <code>SEEK_CUR</code>, or <code>SEEK_END</code>, set the errno to EINVAL and return -1.  Obtain the lock on the <code>ft_ent</code>.  Call <code>VOP_TRYSEEK()</code> on the vnode with the position as <code>pos+ft_ent.offset</code> - if the seek is not legal, set the appropriate errno and return -1.  Otherwise, update the offset in the <code>ft_ent</code>, release the lock, and return the new offset.</p>
+
+<h3>2.1.5 <code>close(int fd)</code></h3>
+
+<p>If entry <code>fd</code> of the current PCB <code>fd_table</code> is NULL, set errno to EBADF and return -1.  Otherwise, obtain the lock on the <code>ft_ent</code>.  Decrement the <code>fd_table[fd]-&gt;refcnt</code> and call <code>VOP_DECREF()</code> on the vnode of the <code>ft_ent</code>.  If the vnode's <code>vn_refcnt</code> is 0, call <code>VOP_CLOSE()</code> on it.  If this VFS call fails, set errno to EIO and return -1.  If the refcnt of the <code>ft_ent</code> is 0, release the lock, free the <code>ft_ent</code> struct, set <code>fd_table[fd]</code> to NULL, and return 0.  If the refcnt of the <code>ft_ent</code> is positive, simply release the lock and return 0.</p>
+
+<h3>2.1.6 <code>dup2(int oldfd, int newfd)</code></h3>
+
+<p>If <code>oldfd</code> or <code>newfd</code> are outside the range of [0,MAXFDS), or if the PCB's <code>fd_table[oldfd]</code> is NULL, set errno to EBADF and return -1.  If none of the entried of the PCB's <code>fd_table</code> are non-NULL, set errno to EMFILE and return -1.  Otherwise, if <code>fd_table[newfd]</code> is non-NULL, call <code>close(newfd)</code>.  Then set <code>fd_table[newfd] = fd_table[oldfd]</code> and return <code>newfd</code>.</p>
+
+<h2>2.2 fork</h2>
+
+<p>The <code>syscall()</code> function will pass the trapframe to <code>fork()</code> so that we have access to it. Always fail as early as possible and in the parent process, so call <code>thread_fork()</code> as late as possible. <code>fork()</code> begins by making a shallow copy of the parent's trapframe for the child process named <code>child_tf</code>. As described in the overview, assign the <code>pid</code> for the child process by randomly selecting an index of <code>process_table</code>. If <code>process_table[pid]</code> is not <code>NULL</code>, then iterate down the array until one is found that is, looping round to the index 1 (omitting 0) if necessary. Hold the assigned <code>pid</code> as a variable in the parent process. Make a copy of all the other PCB fields introduced in the overview from the parent PCB and hold them as variables in the parent process, with the exception of cvs and locks which should simply be initalized later. Note that we have <code>as_copy()</code> available to use for copying the address space.  </p>
+
+<p>Once the above initialization is done, create a semaphore initalized at 0 that will be used to signal to the child after the proper initalization on the child PCB is done. (Note that initializing as much of the child's PCB in the parent is preferable, but that can't be completed until after <code>thread_fork()</code> exits.) Also initalize a variable <code>child</code> that will reference the child's PCB after <code>thread_fork()</code> returns. Pass this variable, the semaphore, and <code>child_tf</code> together as a struct to the existing <code>thread_fork()</code> function along with a helper function <code>new_process_setup()</code>. This function will <code>P()</code> the semaphore to wait for the initalization of the PCB by the parent to complete. Once completed, the function will create a local stackframe variable <code>tf</code> (so that it is on the child's stack) that copies <code>child_tf</code>, destroy the semaphore, modify the return value <code>child_tf-&gt;tf_v0 = 0;</code> and call <code>mips_usermode()</code> with <code>tf</code>.  </p>
+
+<p>After <code>thread_fork()</code> returns, the new PCB will have been created. In the parent thread, place all the PCB fields that have been initiated above into the child's PCB. Set the address of the PCB in the address table. Modify the parent's trapframe so that the return value is the parent's <code>pid</code>. Return with 0, or an error code.  </p>
+
+<p>Note that <code>thread_create()</code> may need to be modified to initalize the default values of the file descriptor array (eg with standard in/out) in order to accomodate the very first process. Similar logic may apply to other fields that have been added to the PCB.</p>
+
+<h2>2.3 execv</h2>
+
+<p>The implementation of <code>execv()</code> will following the existing <code>runprogram()</code> implementation closely, but modified to pass in the arguments to the program being run. Before we activate the new address space do the following. Create a buffer in kernel memory to hold all the arguments. Copy each argument to said kernel buffer with <code>copyin()</code> while being mindful that each argument string is terminated by the null character and that <code>args[argc]</code> should be <code>NULL</code>. Use <code>strlen()</code> to ensure that the arguments are not too long such that they collectively exceed <code>ARG_MAX</code>. Once the buffer is loaded, activate the new address space. After leaving enough room at the base of the user stack for <code>**argv</code>, use <code>copyout()</code> to copy each of the arguments in order from the kernel buffer while being mindful of word alignment. Place the addresses of each of these arguments that are now in the user address space in <code>**argv</code> . The rest of the execution will follow the remaining code in <code>runprogram()</code>, but using the correct stackpointer when calling <code>as_define_stack()</code> and the correct argument count when entering the new user process.</p>
+
+<p>Because the kernel stack size is limited to 1 page (4096 bytes) and because the buffer for the arguments could potentially take up a lot of kernel space (potentially much more than other system calls), not placing a limit on the number of <code>execv()</code> that can be run at the same time could lead us to run out of kernel memory. The simple solution is to have a global kernel lock initialized during <code>thread_bootstrap()</code> that needs to be acquired in order for <code>execv()</code> to continue, thereby limiting the kernel to 1 <code>execv()</code> call at any time. Alternatively, turn on the interrupt and thereby limitting the number of <code>execv()</code> calls to the number of processor. Alternatively still, use a global kernel <code>semaphore()</code> to limit the number of <code>execv()</code> calls made at the same time. For all these approaches, more math will need to be done to determine how much memory we will likely have in the kernel. We currently lean towards the simplest approach, which is the first one. Other size limits may have to be placed on the arguments passed in on top of the default <code>ARG_MAX</code> set in <code>limits.h</code>.</p>
+
+<h2>2.4 waitpid/exit</h2>
+
+<h3>2.4.1 <code>waitpid(pid_t pid, int *status, int options)</code></h3>
+
+<p>A process can only call <code>waitpid</code> on a child. We enforce this by first checking that the child <code>pid</code> is in the <code>struct pid_list *children</code> of the PCB.
+If <code>options</code> is not 0, set errno to EINVAL and return -1.  If <code>status</code> is NULL, set errno to EFAULT and return -1.  If <code>pid</code> does not exist, set errno to ESRCH and return -1. If <code>pid</code> does not exist in the calling process' <code>child_list</code>, set errno to ECHILD and return -1.  If the status of the child with pid <code>pid</code> is S_ZOMBIE, then store its <code>exit_status</code> in the <code>status</code> pointer, then call <code>thread_destroy()</code> on the child and remove its pid from your <code>child_list</code> with <code>remove_pid()</code>.  Otherwise, call <code>cv_wait()</code> on the <code>wait_on</code> condition variable of the child's process control block.  Upon waking, store the child PCB's <code>exit_status</code> in the <code>status</code> pointer, release the <code>cv_lock</code>, then call <code>thread_destroy()</code> on the child and remove its pid from your <code>child_list</code> with <code>remove_pid()</code>.  Finally, return <code>pid</code>.</p>
+
+<h3>2.4.2 <code>__exit(int exitcode)</code></h3>
+
+<p>Iterate through the process control block's <code>pid_list children</code>.  For each child, look at the status of the thread of execution.  If it is <code>S_ZOMBIE</code>, then call <code>thread_destroy()</code> and remove its pid from your child pid list with <code>remove_pid()</code>.  If the child is not a zombie, obtain the <code>lock</code> of the <code>orphan_list</code> in the kernel heap and add the pid of the child to it with <code>add_pid()</code>.  Set the <code>exit_status</code> field of the current process control block to <code>_MKWAIT_EXIT(exitstatus)</code>.  Call <code>thread_exit()</code> to do cleanup and set a state of S_ZOMBIE.  Call <code>cv_broadcast()</code> on the <code>waiting_on</code> cv of the calling process' control block to wake up sleeping parent.</p>
+
+<h2>2.5 Other System Calls</h2>
+
+<h3>2.5.1 <code>chdir(const char *pathname)</code></h3>
+
+<p>use vfs_chdir()
+If pathname is NULL, set errno to EFAULT and return 0.  Otherwise, call <code>vfs_chdir()</code> on the supplied pathname.  If the VFS call fails, rset the appropriate errno and return -1.  Otherwise, return 0.</p>
+
+<h3>2.5.2 <code>__getcwd(char *buf, size_t buflen)</code></h3>
+
+<p>If <code>buf</code> is NULL, set the errno to EFAULT and return NULL.  Call <code>vfs_getcwd()</code> on the user supplied buffer.  If the VFS call fails, rset the appropriate errno and return -1.  Otherwise, return the length of the pathname.</p>
+
+<h3>2.5.3 getpid</h3>
+
+<p>Obtain the <code>pid</code> of the current process by returning <code>curthread-&gt;pid</code>. Note that <code>getpid()</code> does not fail.</p>
+
+<h3>2.5.4 <code>kill_curthread()</code></h3>
+
+<p>Simply calls <code>__exit(__WSIGNALED)</code></p>
+
+<h2>2.6 Scheduling</h2>
+
+<p>Priority-based; aiming to emulate shortest-time-to-completion first</p>
+
+<p>N wait channels of increasing priority - jobs scheduled to run are inserted into the appropriate channel for their priority
+Scheduler picks a queue in a weighted random manner and runs the first job in it (ie, the first job in a high priority queue is twice as likely to run as the first job in the next lowest priority queue)
+Job priority is recalculated each time it is reinserted to the ready queue:
+Priority of jobs that have run for a long time over a bounded time interval are likely to continue to take a long time to run, and thus will receive lower priority
+This will attempt to create a shortest time to completion scheduler based on the job's recent run history
+This method will require us to track the amount of time the job has been in the 'RUN' state - we can do this by keeping tuples of (time scheduled, time descheduled) in the process struct, treadmilled, and recalculating the time run over the set interval</p>
+
+<h3>Parameters:</h3>
+
+<ul>
+<li>Random queue selection</li>
+<li>Number of priority levels</li>
+<li>Time threshold for each priority level</li>
+<li>Length of bounded time interval</li>
+</ul>
+
+<p>We will set the time slice window based on empirical performance on a variety of test cases.</p>
+
+<h3>Performances and Caveats</h3>
+
+<p>Obviously, this has the danger of starvation.  We hope that the appropriate bound on the time interval will ensure threads that have been downgraded in priority several times will be returned to a higher priority eventually.  The weighted random selection of priority queues should also grant less starvation than a deterministic method.</p>
+
+<h2>2.7 Synchronization issues</h2>
+
+<p>Most of the synchronizaiton issues of our implementation were discussed in detail in our overview, but we will present an overview of the problems anticipated and the synchronizaiton primitives employed to solve them.</p>
+
+<p>Our simple zombie reaping scheme avoids many of the synchronization issues that could occur in wait/exit.  If the parent exits before the child, any non-zombie children will be added to the global orphan list.  Thus, even if a child and parent are racing to execute and the parent wins, the child will be placed in the orphan list before it becomes a zombie, but not long after it status is changed it will be reaped by the dedicated reaping thread.  If the child exits before the parent, it will save it exit status and do some cleanup (and marking itself as a zombie) before signalling its own CV on which the parent is waiting.  This means that as the parent wakes up, the child is guaranteed to have exited and marked its appropriate status, and the parent can do final cleanup.  The downside of this system in which zombies are only reaped by the parent at exit is that a malicious user might spawn many processes and waste the systems pids on zombies.  To combat this an upper limit might be set on the number of children a parent can spawn.</p>
+
+<p>Because processes are single-threaded in our system, we also avoid many IO synchronization issues.  Each process will only have a single thread accessing its <code>fd_table</code> at a time, so synchronizaiton is only required at the level of the <code>ft_ent</code> structs, which may have several forked processes attempting to operate on them.  Since all operations effectively are changing the state of this file metadata (as well as the vnode itself), a simple mutex lock is employed to ensure updates happen atomically.</p>
+
+<p>The global orphan list is also synchronized with a mutex to ensure that additions of zombies (by exiting parents) and their removal by the reaping thread are atomic operations.</p>
+
+<p><code>fork()</code> employs semaphores for synchronization between the newly spawning child process and the caller.  A semaphore is initialized to 0 and passed to the child through <code>thread_fork()</code> called on a helper function.  This semaphore will only be V-ed by the parent on successful initiation of the PCB, thus ensuring that the child, who must V the semaphore from its helper function, can return to usermode and continue executing beyond the system call.</p>
+
+<h1>3. Plan of Action &amp; Credit</h1>
+
+<p><img src="http://i45.tinypic.com/2eyf9sh.png" alt="schedule" title="" /></p>
+
+<p>We kept our data structures mostly in place after the peer reviews. We originally had our PCBs as a doubly linked list that lives in kernel heap, but our partnering group pointed out to us that the linking isn't necessary. We learned a lot about how fork/exec is done through our partnering group, although section and OH was even more helpful. We discussed synchronization issues in great depth during the peer review, and those discussions are now reflected in our design. We didn't make other changes to our design due to the peer review, at least not directly.</p>
+
+<h1>4. Code Reading Responses</h1>
+
+<p>ELF Questions</p>
+
+<ol>
+<li><p>What are the ELF magic numbers?</p>
+
+<p>The first 4 bytes of e_indent, the array of bytes that specifies how the file should be interpreted, are 3x7f, 'E', 'L', 'F', respectively. The subsequent fields indicate the file class, data encoding, ELF version, OS/syscall ABI identification, and syscall ABI version.</p></li>
+<li><p>What is the difference between <code>UIO_USERISPACE</code> and <code>UIO_USERSPACE</code>? When should one use <code>UIO_SYSSPACE</code> instead?</p>
+
+<p><code>UIO_USERISPACE</code> and <code>UIO_USERSPACE</code> stand for user process code and user process data respectively. One should use UIO_SYSSPACE when writing data to a kernel buffer.</p></li>
+<li><p>Why can the struct uio that is used to read in a segment be allocated on the stack in load_segment() (i.e., where does the memory read actually go)?</p>
+
+<p>The uio struct contains a iovec, which wraps a buffer that is the destination of the memory read.  The uio, however, also specifies the address space as that of the current thread, so the read happen into the user address space. </p></li>
+<li><p>In runprogram(), why is it important to call vfs_close() before going to usermode?</p>
+
+<p>Once we've loaded the executable, we no longer need a reference to the file. If we don't close the vnode before warping to user mode in another process, we will never close the file and have a memory leak.</p></li>
+<li><p>What function forces the processor to switch into usermode? Is this function machine dependent?</p>
+
+<p><code>enter_new_process()</code>, located in trap.c, forces the processor to switch into usermode. It is machine dependent--Passing argc/argv may use additional stack space on some other platforms, but not on mips.</p></li>
+<li><p>In what file are copyin and copyout defined? memmove? Why can't copyin and copyout be implemented as simply as memmove?</p>
+
+<p>copyin() and copyout() are defined in copyinout.c and memmove() is defined in memmove.c. copyin()/copyout() copies block of memory across user/kernel addresses ensuring that user pointers are not accessing offlimit addresses, something that memmove() is not capable of doing.</p></li>
+<li><p>What (briefly) is the purpose of userptr_t?</p>
+
+<p>It is used for noting that the provided address needs to be within the proper userspace region.</p></li>
+</ol>
+
+<p>Trap/Syscall Questions</p>
+
+<ol>
+<li><p>What is the numerical value of the exception code for a MIPS system call?</p>
+
+<p><code>#define EX_SYS 8</code></p></li>
+<li><p>How many bytes is an instruction in MIPS? (Answer this by reading syscall() carefully, not by looking somewhere else.)</p>
+
+<p>4 bytes, the amount the program counter is advanced before syscall returns.</p></li>
+<li><p>Why do you "probably want to change" the implementation of kill_curthread()?</p>
+
+<p>We don't want the kernel to panic when a user-level code hits a fatal fault.</p></li>
+<li><p>What would be required to implement a system call that took more than 4 arguments?</p>
+
+<p>Additional arguments would need to be fetched from the user-level stack starting at sp+16.</p></li>
+</ol>
+
+<p>MIPS Questions</p>
+
+<ol>
+<li><p>What is the purpose of the SYSCALL macro?</p>
+
+<p>The SYSCALL() macro allows for a single shared system call dispatcher by loading a number into the v0 register (where the dispatcher expects to find it) and jumping to the shared code.</p></li>
+<li><p>What is the MIPS instruction that actually triggers a system call? (Answer this by reading the source in this directory, not looking somewhere else.)</p>
+
+<p>Line 85 of syscalls-mips.S, which executes the instruction "syscall"</p></li>
+<li><p>After reading syscalls-mips.S and syscall.c, you should be prepared to answer the following question: OS/161 supports 64-bit values; lseek() takes and returns a 64-bit offset value. Thus, lseek() takes a 32-bit file handle (arg0), a 64-bit offset (arg1), a 32-bit whence (arg3), and needs to return a 64-bit offset value. In void syscall(struct trapframe *tf) where will you find each of the three arguments (in which registers) and how will you return the 64-bit offset? </p>
+
+<p>The first four arguments must be passed in register a0-3, and 64-bit arguments must be in aligned registers.  This means arg0 of lseek() will be in a0, arg1 in registers a2 and a2 with register a1 unused.  The final argument will be found in the user level stack at sp+16.  The 64-bit return value will be stored across registers v0 and v1.</p></li>
+</ol>
+

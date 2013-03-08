@@ -1,0 +1,52 @@
+Script started on Fri Mar  8 04:56:11 2013
+]0;jharvard@appliance:~/cs161/os161/submit/asst2[?1034hjharvard@appliance (~/cs161/os161/submit/asst2): cd ~? /cs161  /root
+]0;jharvard@appliance:~/cs161/rootjharvard@appliance (~/cs161/root): sys161 kernel
+sys161: System/161 release 1.99.05, compiled Jan 30 2013 01:02:01
+
+OS/161 base system version 1.99.05
+Copyright (c) 2000, 2001, 2002, 2003, 2004, 2005, 2008, 2009
+   President and Fellows of Harvard College.  All rights reserved.
+
+White-Faced Storm Petrel-OS ver. 0 (ASST2 #266)
+
+3880k physical memory available
+Device probe...
+lamebus0 (system main bus)
+emu0 at lamebus0
+ltrace0 at lamebus0
+ltimer0 at lamebus0
+beep0 at ltimer0
+rtclock0 at ltimer0
+lrandom0 at lamebus0
+random0 at lrandom0
+lhd0 at lamebus0
+lhd1 at lamebus0
+lser0 at lamebus0
+con0 at lser0
+
+cpu0: MIPS r3000
+cpu1: MIPS r3000
+cpu2: MIPS r3000
+cpu3: MIPS r3000
+OS/161 kernel [? for menu]: tt2
+Starting thread test 2...
+0123456731207456
+Thread test 2 done.
+Operation took 0.335233080 seconds
+OS/161 kernel [? for menu]: p s /sbin/o poweroff
+Shutting down.
+cpu1: offline.
+The system is halted.
+cpu2: offline.
+cpu3: offline.
+sys161: 751619277026286847 cycles (14247780 run, 751619277012039067 global-idle)
+sys161:   cpu0: 14093136 kern, 17 user, 154627 idle)
+sys161:   cpu1: 3898637 kern, 0 user, 10349143 idle)
+sys161:   cpu2: 3290423 kern, 0 user, 10957357 idle)
+sys161:   cpu3: 1764423 kern, 0 user, 12483357 idle)
+sys161: 1634 irqs 5 exns 0r/0w disk 25r/824w console 8r/0w/3m emufs 0r/0w net
+sys161: Elapsed real time: 9.064835 seconds (8.29159e+10 mhz)
+sys161: Elapsed virtual time: 9.051473897 seconds (25 mhz)
+]0;jharvard@appliance:~/cs161/rootjharvard@appliance (~/cs161/root): exit
+
+Script done on Fri Mar  8 04:56:34 2013
