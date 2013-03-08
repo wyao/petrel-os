@@ -109,7 +109,6 @@ pid_t sys_fork(struct trapframe *tf, int *err){
     *err = ENOMEM;
     goto err9;
   }
-  //TODO: upon success of thread_fork, add this to parent's child_list (when?)
 
   struct thread *child_thread;
 
@@ -129,15 +128,13 @@ pid_t sys_fork(struct trapframe *tf, int *err){
   child_thread->waiting_on = child_waiting_on;
   child_thread->t_addrspace = child_as;
   child_thread->t_cwd = curthread->t_cwd;
-  VOP_INCREF(child_thread->t_cwd); // TODO: do we need to do this?
+  VOP_INCREF(child_thread->t_cwd); 
   child_thread->pid = childpid;
   child_thread->parent_pid = curthread->pid;
-  // TODO: other setup?
   
   V(s->wait_on_parent);
   P(s->wait_on_child);
 
-  // TODO: Check if child was successful?
   // Insert child's PID into head of parents list
   new_child_pidlist->next = curthread->children;
   new_child_pidlist->pid = childpid;

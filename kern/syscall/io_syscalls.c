@@ -168,7 +168,7 @@ sys_rw(int fd, userptr_t buf, size_t buf_len, int *err, int rw) {
   int diff = uio.uio_offset - curthread->fd[fd]->offset;
 
   if (curthread->fd[fd]->update_pos)
-    curthread->fd[fd]->offset = uio.uio_offset;  //TODO: double check this - should be new offset after read
+    curthread->fd[fd]->offset = uio.uio_offset;  
 
   lock_release(curthread->fd[fd]->mutex);
   return diff;
