@@ -152,7 +152,7 @@ struct thread {
  */
 extern struct thread **process_table;
 extern struct lock *getpid_lock;
-
+extern struct lock *global_exec_lock;
 
 /* Call once during system startup to allocate data structures. */
 void thread_bootstrap(void);

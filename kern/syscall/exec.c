@@ -12,12 +12,11 @@
 #include <synch.h>
 #include <kern/unistd.h>
 #include <copyinout.h>
-#include <spl.h>
 
 //TODO: Use global lock instead
 
 int sys_execv(userptr_t progname, userptr_t args){
-    int i, pad, spl, argc, result, part;
+    int i, pad, argc, result, part;
     char *kbuf;
     size_t get, offset;
     struct vnode *v;
@@ -37,8 +36,8 @@ int sys_execv(userptr_t progname, userptr_t args){
     }
     kfree(kbuf);
 
-    // Turn interrupts off to prevent multiple execs from executing to save space
-    spl = splhigh();
+    // Ensure only 1 exec at a time
+    lock_acquire(global_exec_lock);
 
     // Count args
     argc = 0;
@@ -135,7 +134,7 @@ int sys_execv(userptr_t progname, userptr_t args){
     // Wrap up
     kfree(args_buf);
     vfs_close(v);
-    splx(spl);
+    lock_release(global_exec_lock);
 
     /* Warp to user mode. */
     enter_new_process(argc, (userptr_t)stackptr, stackptr, entrypoint);
@@ -155,6 +154,6 @@ int sys_execv(userptr_t progname, userptr_t args){
     err0:
         kfree(args_buf);
     err_:
-        splx(spl);
+        lock_release(global_exec_lock);
         return result;
 }

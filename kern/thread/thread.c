@@ -75,6 +75,7 @@ static struct semaphore *cpu_startup_sem;
 /* Process table global definitions */
 struct thread **process_table;
 struct lock *getpid_lock;
+struct lock *global_exec_lock;
 
 ////////////////////////////////////////////////////////////
 /*
@@ -244,7 +245,7 @@ cpu_create(unsigned hardware_number)
 	c->c_hardclocks = 0;
 
 	c->c_isidle = false;
-	for (int i=0; i<NUM_PRIORITIES; i++) 
+	for (int i=0; i<NUM_PRIORITIES; i++) // TODO: abstract to new function?
 		threadlist_init(&c->c_mlf_runqueue.runqueue[i]);
 	spinlock_init(&c->c_runqueue_lock);
 
@@ -305,6 +306,7 @@ thread_destroy(struct thread *thread)
 	 * If you add things to struct thread, be sure to clean them up
 	 * either here or in thread_exit(). (And not both...)
 	 */
+	// TODO more cleanup
 
 	/* VFS fields, cleaned up in thread_exit */
 	KASSERT(thread->t_cwd == NULL);
@@ -431,6 +433,10 @@ thread_bootstrap(void)
 	getpid_lock = lock_create("getpid_lock");
 	if (getpid_lock == NULL)
 		panic("thread_bootstrap: Out of memory\n");
+
+	global_exec_lock = lock_create("global_exec_lock");
+	if (global_exec_lock == NULL)
+		panic("thread_bootstrap: Out of memory creating global_exec_lock\n");
 
 	/*
 	 * Create the cpu structure for the bootup CPU, the one we're
@@ -1040,6 +1046,7 @@ thread_exit(void)
 void
 thread_yield(void)
 {
+	//TODO: return with probability inversely proportional to priority
 	if (curthread->priority < NUM_PRIORITIES-1)
 		curthread->priority++; // Decrease priority when a process uses whole time slice
 	thread_switch(S_READY, NULL);
@@ -1110,7 +1117,7 @@ thread_consider_migration(void)
 	threadlist_init(&victims);
 	spinlock_acquire(&curcpu->c_runqueue_lock);
 	for (i=0; i<to_send; i++) {
-		t = mlf_rem_tail(&curcpu->c_mlf_runqueue); 
+		t = mlf_rem_tail(&curcpu->c_mlf_runqueue); // TODO: enter new CPU with same priority?
 		threadlist_addhead(&victims, t);
 	}
 	spinlock_release(&curcpu->c_runqueue_lock);
