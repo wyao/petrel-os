@@ -10,6 +10,26 @@ This is a new section that we are adding now that we've completed A2 with the go
 
 Global lock on exec
 
+Known Issues
+------------
+FAILURE: open null: with bad flags: No such file or directory
+bad file numbers
+
+bad_lseek.c passes when run individually, but when running all asst2 badcalls:
+testbin/badcall: UH-OH: opening null: failed: No such file or directory
+
+2nd run, open:
+testbin/badcall: FAILURE: open null: with bad flags: No such file or directory
+
+By the 3rd run there are a lot of out of memory errors (to be expected)
+we also get (which assume to be related and not an actual failure):
+testbin/badcall: UH-OH: creating badcallfile: failed: Out of memory
+testbin/badcall: FAILURE: write with NULL buffer: Bad file number
+
+bigexec panics on the largest input (1000 8-letter words) due to:
+    0xffffffff8002bf04 in copystr (dest=0x80283800 "\200(4", src=0x40280c <Address 0x40280c out of bounds>,
+        maxlen=1024, stoplen=1024, gotlen=0x80040eac) at ../../vm/copyinout.c:241
+
 Table of Contents
 =================
 1.    Overview
