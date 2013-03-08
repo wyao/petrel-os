@@ -26,7 +26,7 @@ We use a `global_exec_lock` to ensure that only 1 exec syscall can be performed 
     /* Max bytes for an exec function */
     #define __ARG_MAX       (64 * 1024)
 
-Fild Descriptors
+File Descriptors
 ----------------
 Each process is limited to 16 file descriptors (defined in `__FD_MAX`) with 0-2 assigned to stdio by default. The 16 availalbe file descriptors must be between 0-15 inclusive.
 
@@ -81,7 +81,9 @@ We adjusted our DUMBVM_STACKPAGES to 18 pages to run this test. Our kernel panic
         maxlen=1024, stoplen=1024, gotlen=0x80040eac) at ../../vm/copyinout.c:241
 
 ###Memory Leaks###
-We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.
+We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.  
+
+Note that we don't explicitly call `exorcise()` outside of the `thread_switch()` routine. So not all memory will be cleaned up immediately (during the `wait_pid` call) until the next thread switch.
 
 Table of Contents
 =================

@@ -108,7 +108,7 @@ table.text th, table.text td {
 #define __ARG_MAX       (64 * 1024)
 </code></pre>
 
-<h2>Fild Descriptors</h2>
+<h2>File Descriptors</h2>
 
 <p>Each process is limited to 16 file descriptors (defined in <code>__FD_MAX</code>) with 0-2 assigned to stdio by default. The 16 availalbe file descriptors must be between 0-15 inclusive.</p>
 
@@ -171,7 +171,9 @@ testbin/badcall: FAILURE: open null: with bad flags: No such file or directory
 
 <h3>Memory Leaks</h3>
 
-<p>We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.</p>
+<p>We believe we may be leaking some memory. Specifically, when we run various IO related tests, we lose single blocks of 256 and 16 bytes of memory.  </p>
+
+<p>Note that we don't explicitly call <code>exorcise()</code> outside of the <code>thread_switch()</code> routine. So not all memory will be cleaned up immediately (during the <code>wait_pid</code> call) until the next thread switch.</p>
 
 <h1>Table of Contents</h1>
 
