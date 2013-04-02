@@ -442,3 +442,12 @@ file        syscall/waitexit_syscalls.c
 file        syscall/cwd_syscalls.c
 file        syscall/fork.c
 file        syscall/exec.c
+
+
+#########################################
+#					                    #
+#	   Assignment 3 code		        #
+#	   	      			                #
+#########################################
+
+file        arch/mips/vm/vm.c
