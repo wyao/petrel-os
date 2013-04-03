@@ -16,7 +16,8 @@
 struct cm_entry{
     struct thread *thread;
     int disk_offset;  // Stores the disk offset when the page is in memory
-    int vaddr_base:28;
+    vaddr_t vaddr_base:20;
+    int junk:8;
     int state:2;
     int busy_bit:1;
     int use_bit:1;
@@ -34,21 +35,21 @@ int find_free_page(void);
 /*
  * Acessor/setter methods
  */
-int cme_get_vaddr(struct cm_entry *cme);
-void cme_set_vaddr(struct cm_entry *cme, int vaddr);
+int cme_get_vaddr(int ix);
+void cme_set_vaddr(int ix, int vaddr);
 
-int cme_get_state(struct cm_entry *cme);
-void cme_set_state(struct cm_entry *cme, int state);
+int cme_get_state(int ix);
+void cme_set_state(int ix, int state);
 
 /* core map entry pinning */
-int cme_get_busy(struct cm_entry *cme);
-void cme_set_busy(struct cm_entry *cme, int busy);
+int cme_get_busy(int ix);
+void cme_set_busy(int ix, int busy);
 
 // Attempts to (synchronously) acquire busy bit on given CME and returns success or failure
-int cme_try_pin(struct cm_entry *cme);
+int cme_try_pin(int ix);
 
-int cme_get_use(struct cm_entry *cme);
-void cme_set_use(struct cm_entry *cme, int use);
+int cme_get_use(int ix);
+void cme_set_use(int ix, int use);
 
 /*
  * Machine-dependent functions

@@ -35,6 +35,7 @@ static uint32_t num_cm_user;
  */
 
 void coremap_bootstrap(void){
+    int i;
     paddr_t lo, hi;
     uint32_t npages, size;
 
@@ -65,7 +66,14 @@ void coremap_bootstrap(void){
     num_cm_user = 0;
 
     // Initialize coremap entries; basically zero everything
-
+    for (i=0; i<num_cm_entries; i++) {
+        coremap[i].thread = NULL;
+        coremap[i].disk_offset = 0;
+        coremap[i].vaddr_base = 0;
+        coremap[i].state = CME_FREE;
+        coremap[i].busy_bit = 0;
+        coremap[i].use_bit = 0;
+    }
 
     // Initialize synchronization primitives
     spinlock_init(busy_lock);
@@ -80,7 +88,7 @@ void coremap_bootstrap(void){
 int find_free_page(void){
     int i;
     for (i=0; i<(int)num_cm_entries; i++){
-        if (cme_try_pin(&coremap[i])){
+        if (cme_try_pin(i)){
             if (cme_get_state(&coremap[i]) == CME_FREE)
                 return i;
             else
@@ -94,42 +102,42 @@ int find_free_page(void){
  * Coremap accessor/setter methods 
  */
 
-int cme_get_vaddr(struct cm_entry *cme){
-    return (int)(cme->vaddr_base << 4);
+int cme_get_vaddr(int ix){
+    return (incoremape[ix].vaddr_base << 12);
 }
-void cme_set_vaddr(struct cm_entry *cme, int vaddr){
-    cme->vaddr_base = vaddr;
+void cme_set_vaddr(int ix, int vaddr){
+    coremape[ix].vaddr_base = vaddr;
 }
 
-int cme_get_state(struct cm_entry *cme){
-    return (int)(cme->state);
+int cme_get_state(int ix){
+    return (int)(coremape[ix].state);
 }
-void cme_set_state(struct cm_entry *cme, int state){
-    cme->state = state;
+void cme_set_state(int ix, int state){
+    coremape[ix].state = state;
 }
 
 /* core map entry pinning */
-int cme_get_busy(struct cm_entry *cme){
-    return (int)cme->busy_bit;
+int cme_get_busy(int ix){
+    return (int)coremap[ix].busy_bit;
 }
-void cme_set_busy(struct cm_entry *cme, int busy){
-    cme->busy_bit = (busy > 0);
+void cme_set_busy(int ix, int busy){
+    coremap[ix].busy_bit = (busy > 0);
 }
-// Returns 1 on success (cme was not busy) and 0 on failure
-int cme_try_pin(struct cm_entry *cme){
+// Returns 1 on success (cme[ix] was not busy) and 0 on failure
+int cme_try_pin(int ix){
     spinlock_acquire(busy_lock);
 
-    int ret = cme_get_busy(cme);
+    int ret = cme_get_busy(ix);
     if (!ret)
-        cme_set_busy(cme,1);
+        cme_set_busy(ix,1);
 
     spinlock_release(busy_lock);
     return ~ret;
 }
 
-int cme_get_use(struct cm_entry *cme){
-    return (int)cme->use_bit;
+int cme_get_use(int ix){
+    return (int)coremape[ix].use_bit;
 }
-void cme_set_use(struct cm_entry *cme, int use){
-    cme->use_bit = (use > 0);
+void cme_set_use(int ix, int use){
+    coremape[ix].use_bit = (use > 0);
 }
