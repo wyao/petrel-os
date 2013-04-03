@@ -37,6 +37,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <machine/coremap.h>
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -73,6 +74,13 @@ as_zero_region(paddr_t paddr, unsigned npages)
 
 
 /* AS FUNCTIONS */
+
+/* as_create
+ *
+ * Creates/initializes addrspace struct.
+ *
+ * Sychronization: none
+ */
 struct addrspace *
 as_create(void)
 {
@@ -83,6 +91,7 @@ as_create(void)
 		return NULL;
 	}
 
+	#if USE_DUMBVM
 	/*
 	 * DUMBVM INITIALIZATION
 	 */
@@ -94,6 +103,7 @@ as_create(void)
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
 
+	#else
 	/*
 	 * ASST3 Initialization
 	 */
@@ -107,7 +117,16 @@ as_create(void)
 	err1:
 	kfree(as);
 	return NULL;
+	#endif
 }
+
+/* as_copy
+ *
+ * Duplicates addrspace and copies each physical page
+ * to guarantee unique physical page access.
+ *
+ * Sychrnonization: Will be performed by helper functions
+ */
 
 int
 as_copy(struct addrspace *old, struct addrspace **ret)

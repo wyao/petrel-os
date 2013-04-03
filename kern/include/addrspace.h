@@ -38,6 +38,8 @@
 #include <vm.h>
 #include "opt-dumbvm.h"
 
+#define USE_DUMBVM 1
+
 struct vnode;
 
 
@@ -67,6 +69,7 @@ void pte_set_exists(struct pt_ent *pte, int exists);
  */
 
 struct addrspace {
+#if USE_DUMBVM
 	// DumbVM fields
 	vaddr_t as_vbase1;
 	paddr_t as_pbase1;
@@ -75,13 +78,14 @@ struct addrspace {
 	paddr_t as_pbase2;
 	size_t as_npages2;
 	paddr_t as_stackpbase;
-
+#else
 	// ASST3 Fields
 	struct spinlock *pt_lock;
 	vaddr_t pt_directory; // Address of first-level page table (struct pt_ent **)
 	// Heap pointers
 	vaddr_t heap_start;
 	vaddr_t heap_end;
+#endif
 };
 
 /*

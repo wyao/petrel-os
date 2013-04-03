@@ -106,7 +106,7 @@ int cme_get_vaddr(int ix){
     return (incoremape[ix].vaddr_base << 12);
 }
 void cme_set_vaddr(int ix, int vaddr){
-    coremape[ix].vaddr_base = vaddr;
+    coremape[ix].vaddr_base = vaddr >> 12;
 }
 
 int cme_get_state(int ix){
