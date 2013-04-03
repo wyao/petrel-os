@@ -108,17 +108,19 @@ int find_free_page(void){
  */
 int choose_evict_page(void){
     while(1){
-        if (cme_try_pin(clock_hand)){
-            if (cme_get_use(clock_hand)){
-                cme_set_use(clock_hand,0);
-                cme_set_busy(clock_hand,0);
+        if (cme_get_state(clock_hand) != CME_FIXED){
+            if (cme_try_pin(clock_hand)){
+                if (cme_get_use(clock_hand)){
+                    cme_set_use(clock_hand,0);
+                    cme_set_busy(clock_hand,0);
+                }
+                else //if tlb_probe_all(page i) TODO
+                    return clock_hand;
             }
-            else //if tlb_probe_all(page i) TODO
-                return clock_hand;
+            clock_hand++;
+            if (clock_hand >= (int)num_cm_entries)
+                clock_hand = 0;
         }
-        clock_hand++;
-        if (clock_hand >= (int)num_cm_entries)
-            clock_hand = 0;
     }
     return -1; //Control should never reach here...
 }
