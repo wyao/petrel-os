@@ -48,6 +48,7 @@
 struct core_map{
 	struct cm_entry *entries;
 	struct spinlock *busy_lock;
+
 };
 
 /* Initialization function */

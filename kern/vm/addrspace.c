@@ -305,18 +305,16 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
  */
 
 int pte_get_location(struct pt_ent *pte){
-	return (int)pte->page_paddr_base;
+	return (int)(pte->page_paddr_base << 12);
 }
 void pte_set_location(struct pt_ent *pte, int location){
-	int mask = 0xFFFFF;
-	pte->page_paddr_base = (location & mask);
+	pte->page_paddr_base = location;
 }
 int pte_get_permissions(struct pt_ent *pte){
 	return (int)pte->permissions;
 }
 void pte_set_permissions(struct pt_ent *pte, int permissions){
-	int mask = 0x3FF;
-	pte->permissions = (permissions & mask);
+	pte->permissions = permissions;
 }
 int pte_get_present(struct pt_ent *pte){
 	return (int)pte->present;
