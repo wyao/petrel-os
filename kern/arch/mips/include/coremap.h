@@ -31,6 +31,7 @@ struct lock *cv_lock;
  * Page selection helpers
  */
 int find_free_page(void);
+int choose_evict_page(void);
 
 /*
  * Acessor/setter methods

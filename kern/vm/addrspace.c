@@ -102,7 +102,7 @@ as_create(void)
 	as->as_pbase2 = 0;
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
-
+	
 	#else
 	/*
 	 * ASST3 Initialization

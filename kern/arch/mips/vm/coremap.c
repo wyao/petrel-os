@@ -14,6 +14,7 @@
 // Local shared variables
 static struct cm_entry *coremap;
 static struct spinlock *busy_lock;
+static int clock_hand;
 
 static uint32_t base; // Number of pages taken up by coremap
 
@@ -65,8 +66,11 @@ void coremap_bootstrap(void){
     num_cm_kernel = 0;
     num_cm_user = 0;
 
+    // NRU Clock
+    clock_hand = 0;
+
     // Initialize coremap entries; basically zero everything
-    for (i=0; i<num_cm_entries; i++) {
+    for (i=0; i<(int)num_cm_entries; i++) {
         coremap[i].thread = NULL;
         coremap[i].disk_offset = 0;
         coremap[i].vaddr_base = 0;
@@ -89,13 +93,34 @@ int find_free_page(void){
     int i;
     for (i=0; i<(int)num_cm_entries; i++){
         if (cme_try_pin(i)){
-            if (cme_get_state(&coremap[i]) == CME_FREE)
+            if (cme_get_state(i == CME_FREE))
                 return i;
             else
-                cme_set_busy(&coremap[i],0);
+                cme_set_busy(i,0);
         }
     }
     return -1;
+}
+
+/*
+ * Finds a non-busy page that is marked NRU and returns it. 
+ * Intervening pages are marked unused.
+ */
+int choose_evict_page(void){
+    while(1){
+        if (cme_try_pin(clock_hand)){
+            if (cme_get_use(clock_hand)){
+                cme_set_use(clock_hand,0);
+                cme_set_busy(clock_hand,0);
+            }
+            else //if tlb_probe_all(page i) TODO
+                return clock_hand;
+        }
+        clock_hand++;
+        if (clock_hand >= (int)num_cm_entries)
+            clock_hand = 0;
+    }
+    return -1; //Control should never reach here...
 }
 
 /* 
@@ -103,17 +128,17 @@ int find_free_page(void){
  */
 
 int cme_get_vaddr(int ix){
-    return (incoremape[ix].vaddr_base << 12);
+    return (coremap[ix].vaddr_base << 12);
 }
 void cme_set_vaddr(int ix, int vaddr){
-    coremape[ix].vaddr_base = vaddr >> 12;
+    coremap[ix].vaddr_base = vaddr >> 12;
 }
 
 int cme_get_state(int ix){
-    return (int)(coremape[ix].state);
+    return (int)(coremap[ix].state);
 }
 void cme_set_state(int ix, int state){
-    coremape[ix].state = state;
+    coremap[ix].state = state;
 }
 
 /* core map entry pinning */
@@ -136,8 +161,8 @@ int cme_try_pin(int ix){
 }
 
 int cme_get_use(int ix){
-    return (int)coremape[ix].use_bit;
+    return (int)coremap[ix].use_bit;
 }
 void cme_set_use(int ix, int use){
-    coremape[ix].use_bit = (use > 0);
+    coremap[ix].use_bit = (use > 0);
 }
