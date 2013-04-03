@@ -1,0 +1,19 @@
+/* ASST2 Grade
+ * CS161 Course Staff
+ * 3/8/2011
+ */
+
+Total: 81/100
+Codereading questions: 9/10
+  - 1.6. Your answer describes the functions but doesn't truly explain why the
+         functionality can't be totally shared: i.e., due to the need to
+         validate pointers and fail gracefully on error.  The actually copying
+         can be done by something like memmove(); in fact, memcpy() is used.
+  - 1.7. More that it's to prevent you from treating pointers into user memory
+         as valid kernel pointers (which encompasses all other pointer types).
+  - 3.1. There share dispatch control flow, not actually the same
+         post-compilation instructions.  SYSCALL() generates that code during
+         preprocessing.
+Design document: 27/30
+  - Good overall, but scheduler was a tad lacking.
+Implementation: 45/60
