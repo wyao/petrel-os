@@ -29,6 +29,11 @@ int sys_execv(userptr_t progname, userptr_t args){
     kbuf = (void *) kmalloc(sizeof(void *));
 
     // Check user pointer (reusing kbuf)
+    /*
+     * This only checks four bytes of the user-supplied argv array.  You can
+     * thus safely access argv[0], but further accesses to argv[i] are still
+     * unsafe and unchecked.
+     */
     result = copyin((const_userptr_t)args,kbuf,4);
     if (result){
         kfree(kbuf);
@@ -41,13 +46,27 @@ int sys_execv(userptr_t progname, userptr_t args){
 
     // Count args
     argc = 0;
+    /*
+     * These accesses are unsafe.
+     */
     while(usr_args[argc] != NULL){
         argc++;
     }
 
+    /*
+     * With an ARG_MAX of 65536, it is definitely unsafe to be allocating these
+     * arrays on the stack; they could easily overflow the 4k kernel stack
+     * page.
+     */
     size_t got[argc];
     userptr_t user_argv[argc];
 
+    /*
+     * Allocating such a large amount of contiguous memory may become very
+     * difficult or impossible due to external fragmentation in the kernel heap
+     * or in physical memory.  You may want to consider allocating smaller
+     * buffers on demand, as you need them.
+     */
     char *args_buf = kmalloc(ARG_MAX*sizeof(char));
     if (args_buf == NULL)
         goto err_;
@@ -80,7 +99,16 @@ int sys_execv(userptr_t progname, userptr_t args){
     // The args argument is an array of 0-terminated strings.
     i = 0;
     part = 0;
+    /*
+     * These accesses are (still) unsafe.
+     */
     while (usr_args[i] != NULL){
+      /*
+       * If the user has two arguments of size ARG_MAX - 1, this will easily
+       * overflow args_buf.  In particular, you never actually enforce that the
+       * user's arguments are bound by ARG_MAX; you just assume the user will
+       * oblige.
+       */
         result = copyinstr((const_userptr_t)usr_args[i], &args_buf[part], ARG_MAX, &got[i]);
         if (result){
             goto err3;
@@ -109,6 +137,10 @@ int sys_execv(userptr_t progname, userptr_t args){
     offset = 0;
     for (i=argc-1; i>-1; i--){
         part -= got[i]; // readjust inherited part index
+        /*
+         * Assuming that pointers are 4-byte aligned breaks the machine
+         * dependency abstraction barrier.
+         */
         pad = (4 - (got[i]%4) ) % 4; // Word align
         offset += pad;
         offset += got[i];
@@ -140,6 +172,10 @@ int sys_execv(userptr_t progname, userptr_t args){
     enter_new_process(argc, (userptr_t)stackptr, stackptr, entrypoint);
 
     /* enter_new_process does not return. */
+    /*
+     * You should panic if this happens; in no correct execution of the kernel
+     * should this ever occur.
+     */
     return EINVAL;
 
     err4:
