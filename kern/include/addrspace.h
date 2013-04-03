@@ -41,6 +41,33 @@
 struct vnode;
 
 
+struct pt_ent {
+	int page_paddr_base:20; // This field will contain disk offset if page not present
+	int permissions:10;
+	int present:1;
+	int exists:1;
+};
+
+struct pt_dir_ent{
+	int pt_paddr_base:31;
+	int exists:1;
+};
+
+
+int pte_get_location(struct pt_ent *pte);
+void pte_set_location(struct pt_ent *pte, int location);
+int pte_get_permissions(struct pt_ent *pte);
+void pte_set_permissions(struct pt_ent *pte, int permissions);
+int pte_get_present(struct pt_ent *pte);
+void pte_set_present(struct pt_ent *pte, int present);
+int pte_get_exists(struct pt_ent *pte);
+void pte_set_exists(struct pt_ent *pte, int exists);
+
+int ptdir_get_location(struct pt_dir_ent *ptd);
+void ptdir_set_location(struct pt_dir_ent *ptd, int location);
+int ptdir_get_exists(struct pt_dir_ent *ptd);
+void ptdir_set_exists(struct pt_dir_ent *ptd, int exists);
+
 /*
  * Address space - data structure associated with the virtual memory
  * space of a process.
@@ -58,6 +85,12 @@ struct addrspace {
 	size_t as_npages2;
 	paddr_t as_stackpbase;
 
+	// ASST3 Fields
+	struct spinlock *pt_lock;
+	vaddr_t pt_directory; // Address of first-level page table
+	// Heap pointers
+	vaddr_t heap_start;
+	vaddr_t heap_end;
 };
 
 /*

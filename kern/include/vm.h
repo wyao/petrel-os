@@ -45,6 +45,25 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 
+/* Core map structures and functions */
+struct cm_entry{
+ 	struct thread *thread;
+ 	int disk_offset;  // Stores the disk offset when the page is in memory
+ 	int vaddr_base:28;
+ 	int state:2;
+ 	int busy_bit:1;
+ 	int use_bit:1;
+};
+
+int cme_get_vaddr(struct cm_entry *cme);
+void cme_set_vaddr(struct cm_entry *cme, int vaddr);
+int cme_get_state(struct cm_entry *cme);
+void cme_set_state(struct cm_entry *cme, int state);
+int cme_get_busy(struct cm_entry *cme);
+void cme_set_busy(struct cm_entry *cme, int busy);
+int cme_get_use(struct cm_entry *cme);
+void cme_set_use(struct cm_entry *cme, int use);
+
 /* Initialization function */
 void vm_bootstrap(void);
 

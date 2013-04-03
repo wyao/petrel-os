@@ -94,6 +94,15 @@ as_create(void)
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
 
+	/*
+	 * ASST3 Initialization
+	 */
+	spinlock_init(as->pt_lock);
+	if (as->pt_lock == NULL){
+		kfree(as);
+		return NULL;
+	}
+
 	return as;
 }
 
@@ -147,6 +156,11 @@ as_destroy(struct addrspace *as)
 	/*
 	 * Clean up as needed.
 	 */
+
+	/*
+	 * ASST3 Destruction
+	 */
+	spinlock_cleanup(as->pt_lock);
 
 	kfree(as);
 }
@@ -282,3 +296,33 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	return 0;
 }
 
+
+/*
+ * Bit masking functions for Page Table
+ */
+
+int pte_get_location(struct pt_ent *pte){
+	return (int)pte->page_paddr_base;
+}
+//void pte_set_location(struct pt_ent *pte, int location);
+int pte_get_permissions(struct pt_ent *pte){
+	return (int)pte->permissions;
+}
+//void pte_set_permissions(struct pt_ent *pte, int permissions);
+int pte_get_present(struct pt_ent *pte){
+	return (int)pte->present;
+}
+//void pte_set_present(struct pt_ent *pte, int present);
+int pte_get_exists(struct pt_ent *pte){
+	return (int)pte->exists;
+}
+//void pte_set_exists(struct pt_ent *pte, int exists);
+
+int ptdir_get_location(struct pt_dir_ent *ptd){
+	return (int)ptd->pt_paddr_base;
+}
+//void ptdir_set_location(struct pt_dir_ent *ptd, int location);
+int ptdir_get_exists(struct pt_dir_ent *ptd){
+	return (int)ptd->exists;
+}
+//void ptdir_set_exists(struct pt_dir_ent *ptd, int exists);
