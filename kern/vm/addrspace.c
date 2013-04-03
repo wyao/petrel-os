@@ -103,6 +103,8 @@ as_create(void)
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
 
+	return as;
+
 	#else
 	/*
 	 * ASST3 Initialization
@@ -138,6 +140,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
+	#if USE_DUMBVM
 	/*
 	 * DUMBVM COPY
 	 */
@@ -170,6 +173,10 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	*ret = new;
 	return 0;
+
+	#else
+
+	#endif
 }
 
 void
@@ -179,10 +186,13 @@ as_destroy(struct addrspace *as)
 	 * Clean up as needed.
 	 */
 
+	#if !USE_DUMBVM
 	/*
 	 * ASST3 Destruction
 	 */
 	spinlock_cleanup(as->pt_lock);
+
+	#endif
 
 	kfree(as);
 }
