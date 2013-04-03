@@ -99,11 +99,14 @@ as_create(void)
 	 */
 	spinlock_init(as->pt_lock);
 	if (as->pt_lock == NULL){
-		kfree(as);
-		return NULL;
+		goto err1;
 	}
 
 	return as;
+
+	err1:
+	kfree(as);
+	return NULL;
 }
 
 int
@@ -304,25 +307,26 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 int pte_get_location(struct pt_ent *pte){
 	return (int)pte->page_paddr_base;
 }
-//void pte_set_location(struct pt_ent *pte, int location);
+void pte_set_location(struct pt_ent *pte, int location){
+	int mask = 0xFFFFF;
+	pte->page_paddr_base = (location & mask);
+}
 int pte_get_permissions(struct pt_ent *pte){
 	return (int)pte->permissions;
 }
-//void pte_set_permissions(struct pt_ent *pte, int permissions);
+void pte_set_permissions(struct pt_ent *pte, int permissions){
+	int mask = 0x3FF;
+	pte->permissions = (permissions & mask);
+}
 int pte_get_present(struct pt_ent *pte){
 	return (int)pte->present;
 }
-//void pte_set_present(struct pt_ent *pte, int present);
+void pte_set_present(struct pt_ent *pte, int present){
+	pte->present = (present > 0);
+}
 int pte_get_exists(struct pt_ent *pte){
 	return (int)pte->exists;
 }
-//void pte_set_exists(struct pt_ent *pte, int exists);
-
-int ptdir_get_location(struct pt_dir_ent *ptd){
-	return (int)ptd->pt_paddr_base;
+void pte_set_exists(struct pt_ent *pte, int exists){
+	pte->exists = (exists > 0);
 }
-//void ptdir_set_location(struct pt_dir_ent *ptd, int location);
-int ptdir_get_exists(struct pt_dir_ent *ptd){
-	return (int)ptd->exists;
-}
-//void ptdir_set_exists(struct pt_dir_ent *ptd, int exists);

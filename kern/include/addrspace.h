@@ -48,11 +48,6 @@ struct pt_ent {
 	int exists:1;
 };
 
-struct pt_dir_ent{
-	int pt_paddr_base:31;
-	int exists:1;
-};
-
 
 int pte_get_location(struct pt_ent *pte);
 void pte_set_location(struct pt_ent *pte, int location);
@@ -63,10 +58,6 @@ void pte_set_present(struct pt_ent *pte, int present);
 int pte_get_exists(struct pt_ent *pte);
 void pte_set_exists(struct pt_ent *pte, int exists);
 
-int ptdir_get_location(struct pt_dir_ent *ptd);
-void ptdir_set_location(struct pt_dir_ent *ptd, int location);
-int ptdir_get_exists(struct pt_dir_ent *ptd);
-void ptdir_set_exists(struct pt_dir_ent *ptd, int exists);
 
 /*
  * Address space - data structure associated with the virtual memory
@@ -87,7 +78,7 @@ struct addrspace {
 
 	// ASST3 Fields
 	struct spinlock *pt_lock;
-	vaddr_t pt_directory; // Address of first-level page table
+	vaddr_t pt_directory; // Address of first-level page table (struct pt_ent **)
 	// Heap pointers
 	vaddr_t heap_start;
 	vaddr_t heap_end;
