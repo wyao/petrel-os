@@ -55,6 +55,12 @@ struct cm_entry{
  	int use_bit:1;
 };
 
+struct core_map{
+	struct cm_entry *entries;
+	struct spinlock *busy_lock;
+
+};
+
 int cme_get_vaddr(struct cm_entry *cme);
 void cme_set_vaddr(struct cm_entry *cme, int vaddr);
 int cme_get_state(struct cm_entry *cme);
