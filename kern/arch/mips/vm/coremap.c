@@ -33,7 +33,7 @@ static int num_cm_user;
  * Static page selection helpers
  */
 
-// See alloc_one_kpage for synchonization note.
+// See alloc_one_page for synchonization note.
 static int reached_kpage_limit(void){
     if (num_cm_kernel + 1 >= num_cm_entries - MIN_USER_CM_PAGES) {
         return 1;
@@ -41,21 +41,51 @@ static int reached_kpage_limit(void){
     return 0;
 }
 
-/* alloc_one_kpage
+static void mark_allocated(int ix, int iskern) {
+    // Sanity check
+    KASSERT(coremap[ix].thread == NULL);
+    KASSERT(coremap[ix].disk_offset == 0);
+    KASSERT(coremap[ix].vaddr_base == 0);
+    KASSERT(coremap[ix].state == CME_FREE);
+    KASSERT(coremap[ix].busy_bit == 1);
+    KASSERT(coremap[ix].use_bit == 0);
+
+    spinlock_acquire(&stat_lock);
+    if (iskern) {
+        coremap[ix].state = CME_FIXED;
+        num_cm_kernel += 1;
+    }
+    else {
+        coremap[ix].state = CME_DIRTY;
+        num_cm_user += 1;
+    }
+    num_cm_free -= 1;
+    KASSERT(num_cm_free+num_cm_user+num_cm_kernel == num_cm_entries);
+    spinlock_release(&stat_lock);
+}
+
+/*
+ * Page selection APIs
+ */
+
+/* alloc_one_page
  *
- * Allocate one page of kernel memory
+ * Allocate one page of kernel memory. Allocates kernel page if thread is
+ * not NULL, eles allocates user page.
  *
  * Synchronization: note that by not locking stat_lock the entire time
  * it is possible for num_cm_user to be less than MIN_USER_CM_PAGES, but
  * this should be fine if MIN_USER_CM_PAGES is set large enough. This
  * decision was made to keep stat_lock as granular as possible.
  */
-static paddr_t alloc_one_kpage(void){
-    int ix;
+paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
+    int ix, iskern;
+
+    iskern = (thread == NULL);
 
     // check there we leave enough pages for user
-    if (reached_kpage_limit()) {
-        kprintf("alloc_one_kpage: hernel heap full\n");
+    if (iskern && reached_kpage_limit()) {
+        kprintf("alloc_one_page: kernel heap full\n");
         return INVALID_PADDR;
     }
 
@@ -63,39 +93,47 @@ static paddr_t alloc_one_kpage(void){
         ix = find_free_page();
 
         if (ix < 0){ // This should not happen
-            kprintf("alloc_one_kpage: inconsistent state\n");
+            kprintf("alloc_one_page: inconsistent state\n");
             return INVALID_PADDR;
         }
     }
     else {
-        kprintf("alloc_one_kpage: currently does not support swapping\n");
+        kprintf("alloc_one_page: currently does not support swapping\n");
         return INVALID_PADDR;
     }
 
     // ix should be a valid page index at this point
-    mark_allocated(ix, 1 /* iskern */);
+    mark_allocated(ix, iskern);
+
+    // If not kernel, update thread and vaddr_base
+    if (!iskern) {
+        KASSERT(va != 0);
+        coremap[ix].thread = thread;
+        coremap[ix].vaddr_base = va >> 12;
+    }
 
     return COREMAP_TO_PADDR(ix);
 }
 
-static void mark_allocated(int ix, int iskern) {
-    // Sanity check
-    KASSERT(coremap[ix].vaddr_base == 0);
-    KASSERT(coremap[ix].busy_bit == 0);
-    KASSERT(coremap[ix].use_bit == 0);
+vaddr_t alloc_kpages(int npages) {
+    paddr_t pa;
 
-    if (iskern) {
-        coremap[ix].state = CME_FIXED;
-        //update number
+    if (npages > 1) {
+        kprintf("alloc_kpages: only support single page allocations\n");
+        return (vaddr_t) NULL;
     }
-    else {
 
+    pa = alloc_one_page(NULL, (vaddr_t)0);
+    if (pa == INVALID_PADDR) {
+        kprintf("alloc_kpages: allocation failed\n");
+        return (vaddr_t) NULL;
     }
+    return PADDR_TO_KVADDR(pa);
 }
 
-/*
- * Page selection APIs
- */
+// void free_kpages(vaddr_t va) {
+
+// }
 
 /*
  * Finds a non-busy page that is marked CME_FREE and returns its coremap index

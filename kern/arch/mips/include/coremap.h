@@ -17,28 +17,23 @@
 /* Core map structures and functions */
 struct cm_entry{
     struct thread *thread;
-    int disk_offset;  // Stores the disk offset when the page is in memory
+    unsigned int disk_offset;  // Stores the disk offset when page in memory
     vaddr_t vaddr_base:20;
     int junk:8;
-    int state:2;
-    int busy_bit:1;
-    int use_bit:1;
+    unsigned int state:2;
+    unsigned int busy_bit:1;
+    unsigned int use_bit:1;
 };
 
 struct cv *written_to_disk;
 struct lock *cv_lock;
 
-
-/*
- * Static page selection helpers
- */
-static int reached_kpage_limit(void);
-static paddr_t alloc_one_kpage(void);
-static void mark_allocated(int ix, int iskern);
-
 /*
  * Page selection APIs
  */
+paddr_t alloc_one_page(struct thread *thread, vaddr_t va);
+vaddr_t alloc_kpages(int npages);
+//void free_kpages(vaddr_t va);
 int find_free_page(void);
 int choose_evict_page(void);
 

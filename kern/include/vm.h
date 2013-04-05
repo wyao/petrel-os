@@ -57,10 +57,6 @@ void vm_bootstrap(void);
 /* Fault handling function called by trap code */
 int vm_fault(int faulttype, vaddr_t faultaddress);
 
-/* Allocate/free kernel heap pages (called by kmalloc/kfree) */
-vaddr_t alloc_kpages(int npages);
-void free_kpages(vaddr_t addr);
-
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);
 void vm_tlbshootdown(const struct tlbshootdown *);

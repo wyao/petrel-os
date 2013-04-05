@@ -8,6 +8,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <machine/coremap.h>
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -26,41 +27,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;  // THIS IS IN BOTH
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
-}
-
-static
-paddr_t
-getppages(unsigned long npages)
-{
-	paddr_t addr;
-
-	spinlock_acquire(&stealmem_lock);
-
-	addr = ram_stealmem(npages);
-
-	spinlock_release(&stealmem_lock);
-	return addr;
-}
-
-/* Allocate/free some kernel-space virtual pages */
-vaddr_t
-alloc_kpages(int npages)
-{
-	paddr_t pa;
-	pa = getppages(npages);
-	if (pa==0) {
-		return 0;
-	}
-	return PADDR_TO_KVADDR(pa);
-}
-
-void
-free_kpages(vaddr_t addr)
-{
-	/* nothing - leak the memory. */
-
-	(void)addr;
+	coremap_bootstrap();
 }
 
 void
