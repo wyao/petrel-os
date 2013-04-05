@@ -45,6 +45,10 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
+#define PT_PRIMARY_INDEX(va) (int)va >> 22
+#define PT_SECONDARY_INDEX(va) (int)((va >> 12) & 0x3FF)
+#define ADDRESS_OFFSET(addr) (int)(addr & 0xFFF)
+
 /* under dumbvm, always have 48k of user stack */
 #define DUMBVM_STACKPAGES    22//12
 
@@ -328,6 +332,13 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	return 0;
 }
 
+/*
+ * Page table helper methods
+ */
+
+struct pt_ent **pt_create(void){
+	return (struct pt_ent **)kmalloc(PAGE_SIZE*sizeof(struct pte_ent *));
+}
 
 /*
  * Bit masking functions for Page Table
