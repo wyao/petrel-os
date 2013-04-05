@@ -40,8 +40,6 @@
 
 #define USE_DUMBVM 1
 
-#define NOMAP -1
-
 struct vnode;
 
 
