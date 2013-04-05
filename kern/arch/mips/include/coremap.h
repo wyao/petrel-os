@@ -12,6 +12,8 @@
 #define CME_CLEAN 2
 #define CME_DIRTY 3
 
+#define INVALID_PADDR ((paddr_t)0)
+
 /* Core map structures and functions */
 struct cm_entry{
     struct thread *thread;
@@ -28,7 +30,14 @@ struct lock *cv_lock;
 
 
 /*
- * Page selection helpers
+ * Static page selection helpers
+ */
+static int reached_kpage_limit(void);
+static paddr_t alloc_one_kpage(void);
+static void mark_allocated(int ix, int iskern);
+
+/*
+ * Page selection APIs
  */
 int find_free_page(void);
 int choose_evict_page(void);
