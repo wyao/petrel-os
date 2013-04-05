@@ -340,6 +340,65 @@ struct pt_ent **pt_create(void){
 	return (struct pt_ent **)kmalloc(PAGE_SIZE*sizeof(struct pte_ent *));
 }
 
+void pt_destroy(struct pt_ent **pt){
+	int i;
+	for (i=0; i<PAGE_SIZE; i++){
+		if (pt[i] != NULL)
+			kfree(pt[i]);
+	}
+	kfree(pt);
+}
+
+struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
+	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)]
+	if (dir != NULL)
+		return &dir[PT_SECONDARY_INDEX(as)];
+	return NULL;
+}
+
+//TODO: CREATE IF DOESN'T EXIST?
+paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
+	struct pt_ent *pte = get_pt_entry(as,va);
+	if (pte == NULL)
+		return NOMAP;
+	if (!pte_get_present(pte) || !pte_get_exists(pte))
+		return NOMAP;
+	paddr_t pa = (paddr_t)(pte_get_location(pte) << 12) + ADDRESS_OFFSET(va);
+	return pa;
+}
+
+
+//TODO: SHOULD WE CHECK IF PAGE EXISTS?
+int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
+	// If a secondary page table does not exist, allocate one
+	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
+	if (pt_dir == NULL)
+		pt_dir = kmalloc(PAGE_SIZE*sizeof(struct pt_ent));
+	if (pt_dir == NULL)
+		return ENOMEM;
+
+	struct pt_ent pte = get_pt_entry(as,va);
+	pte_set_location(pte,ppn);
+	pte_set_permissions(pte,permissions);
+	pte_set_present(pte,1);
+	pte_set_exists(pte,1);
+
+	return 0;
+}
+
+int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is_present){
+	struct pt_ent *pte = get_pt_entry(as,va);
+	if (pte == NULL)
+		return NOMAP;
+
+	pte_set_location(pte,ppn);
+	pte_set_present(pte,is_present);
+	int newperms = pte_get_permissions(pte)&(~permissions); //TODO: ???
+	pte_set_permissions(pte,newperms);
+
+	return 0;
+}
+
 /*
  * Bit masking functions for Page Table
  */

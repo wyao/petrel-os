@@ -40,6 +40,8 @@
 
 #define USE_DUMBVM 1
 
+#define NOMAP -1
+
 struct vnode;
 
 
@@ -67,18 +69,18 @@ void pte_set_exists(struct pt_ent *pte, int exists);
  *    pt_create - allocates a first-level page table and returns it
  *    pt_destroy - frees primary page table and all non-NULL secondary ones
  *    get_pt_entry - returns the page table entry for the given VA/AS combo or NULL if doesn't exist
- *    va_to_pa - returns the PPN + offset corresponding to the given VA, if a mapping exists, or -1 otherwise
+ *    va_to_pa - returns the PPN + offset corresponding to the given VA, if a mapping exists, or NOMAP otherwise
  *    pt_insert - creates a pte for the given mapping, allocating secondary page table if necessary.  If the
  *                mapping already exists, does nothing.  Returns 0 on success.
- *    pt_update - updates the permissions of an existing entry.  Returns 0 on success.
+ *    pt_update - updates location of an existing entry and AND old permissions with new.  Returns 0 on success.
  */
 
 struct pt_ent **pt_create(void);
 void pt_destroy(struct pt_ent **pt);
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va);
-paddr_t va_to_pa(struct addrspace *as, vaddr_t va);
-int pt_insert(struct addrspace *as, vaddr_t va, paddr_t ppn, int permissions);
-int pt_update(struct addrspace *as, vaddr_t va, int permissions);
+paddr_t va_to_pa(struct addrspace *as, vaddr_t va); //TODO: CREATE IF DOESN'T EXIST
+int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions);
+int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is_present);
 
 
 /*
@@ -101,6 +103,7 @@ struct addrspace {
 #else
 	// ASST3 Fields
 	struct spinlock *pt_lock;
+	struct pt_ent **page_table;
 	vaddr_t pt_directory; // Address of first-level page table (struct pt_ent **)
 	// Heap pointers
 	vaddr_t heap_start;

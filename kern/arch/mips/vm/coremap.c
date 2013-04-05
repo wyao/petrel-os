@@ -85,7 +85,7 @@ static void mark_allocated(int ix, int iskern) {
     KASSERT(coremap[ix].use_bit == 0);
 
     if (iskern) {
-        coremap[i].state = CME_FIXED;
+        coremap[ix].state = CME_FIXED;
         //update number
     }
     else {
