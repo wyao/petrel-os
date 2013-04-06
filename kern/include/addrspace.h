@@ -78,7 +78,9 @@ void pt_destroy(struct pt_ent **pt);
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va);
 paddr_t va_to_pa(struct addrspace *as, vaddr_t va); //TODO: CREATE IF DOESN'T EXIST
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions);
-int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is_present);
+int pt_remove(struct addrspace *as, vaddr_t va);
+int pt_update(struct addrspace *as, vaddr_t va, 
+	int ppn, int permissions, int is_present);
 
 
 /*

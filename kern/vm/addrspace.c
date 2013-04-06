@@ -52,6 +52,7 @@
 /* under dumbvm, always have 48k of user stack */
 #define DUMBVM_STACKPAGES    22//12
 
+#if USE_DUMBVM
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;  // THIS IS IN BOTH VM.C AND HERE
 
 /* DUMBVM HELPER METHODS */
@@ -75,7 +76,7 @@ as_zero_region(paddr_t paddr, unsigned npages)
 {
 	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
 }
-
+#endif
 
 /* AS FUNCTIONS */
 
@@ -118,7 +119,7 @@ as_create(void)
 		goto err1;
 	as->page_table = pt_create();
 	if (as->page_table == NULL)
-		goto err2
+		goto err2;
 
 	return as;
 
@@ -247,7 +248,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	/*
 	 * DUMBVM DEFINE REGION
 	 */
-
+	#if USE_DUMBVM
 	size_t npages;
 
 	/* Align the region. First, the base... */
@@ -281,6 +282,16 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	 */
 	kprintf("dumbvm: Warning: too many regions\n");
 	return EUNIMP;
+
+	#else
+	(void)as;
+	(void)vaddr;
+	(void)sz;
+	(void)readable;
+	(void)writeable;
+	(void)executable;
+	return 0;
+	#endif
 }
 
 int
@@ -289,7 +300,7 @@ as_prepare_load(struct addrspace *as)
 	/*
 	 * DUMBVM PREPARE LOAD
 	 */
-
+	#if USE_DUMBVM
 	KASSERT(as->as_pbase1 == 0);
 	KASSERT(as->as_pbase2 == 0);
 	KASSERT(as->as_stackpbase == 0);
@@ -314,6 +325,11 @@ as_prepare_load(struct addrspace *as)
 	as_zero_region(as->as_stackpbase, DUMBVM_STACKPAGES);
 
 	return 0;
+
+	#else
+	(void)as;
+	return 0;
+	#endif
 }
 
 int
@@ -333,11 +349,17 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	/*
 	 * WDUMBVM DEFINE STACK
 	 */
-
+	#if USE_DUMBVM
 	KASSERT(as->as_stackpbase != 0);
 
 	*stackptr = USERSTACK;
 	return 0;
+
+	#else
+	(void)as;
+	(void)stackptr;
+	return 0;
+	#endif
 }
 
 /*
@@ -359,8 +381,8 @@ void pt_destroy(struct pt_ent **pt){
 
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
-	if (dir != NULL) // or if it doesn't exist
-		return &dir[PT_SECONDARY_INDEX(as)];
+	if (pt_dir != NULL) // or if it doesn't exist
+		return &pt_dir[PT_SECONDARY_INDEX(va)];
 	return NULL;
 }
 
@@ -384,7 +406,7 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	if (pt_dir == NULL)
 		return ENOMEM;
 
-	struct pt_ent pte = get_pt_entry(as,va);
+	struct pt_ent *pte = get_pt_entry(as,va);
 	// Ensure that the VADDR doesn't already map to something or we messed up
 	KASSERT(!pte_get_exists(pte));
 
