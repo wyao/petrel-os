@@ -191,7 +191,6 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	// Copy over old page table
 	int i,j;
-	int free_index = -1;
 	struct pt_ent *curr_old, *curr_new;
 	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
 
@@ -206,10 +205,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				if (pte_get_exists(curr_old)){
 					// Page is in memory
 					if (pte_get_present(curr_old)){
-						while (free_index < 0) 
-							free_index = find_free_page(); // Currently busy waits on free page
-
-						paddr_t base_new = cm_get_paddr(free_index);
+						paddr_t base_new = alloc_one_page(curthread,PT_TO_VADDR(i,j));
 						paddr_t base_old = (pte_get_location(curr_old) << 12);
 						// CONVERT TO KERNEL PTR AND MEMCPY
 						void *src = (void *)PADDR_TO_KVADDR(base_old);
@@ -217,12 +213,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 						memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
 
 						// Set new page table entry to a valid mapping to new location with same permissions
-						pte_set_location(curr_new,cm_get_paddr(free_index)>>12);
+						pte_set_location(curr_new,base_new>>12);
 						pte_set_permissions(curr_new,pte_get_permissions(curr_old));
 						pte_set_exists(curr_new,1);
 						pte_set_present(curr_new,1);
 
-						cme_set_busy(free_index,0);
+						// Unbusy the coremap entry for the new page
+						cme_set_busy(cm_get_index(base_new),0);
 					}
 					// Page is in swap space (TODO - for now treats it as if it didn't exist)
 					else{

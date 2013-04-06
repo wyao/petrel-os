@@ -41,7 +41,7 @@ int choose_evict_page(void);
 /*
  * Acessor/setter methods
  */
-int cm_get_paddr(int ix);
+int cm_get_index(paddr_t pa);
 
 int cme_get_vaddr(int ix);
 void cme_set_vaddr(int ix, int vaddr);

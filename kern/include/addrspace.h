@@ -39,6 +39,7 @@
 #include "opt-dumbvm.h"
 
 #define USE_DUMBVM 0
+#define PT_TO_VADDR(i,j) (vaddr_t)((i << 24)+(j << 12))
 
 struct vnode;
 

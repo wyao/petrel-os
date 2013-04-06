@@ -231,8 +231,8 @@ int choose_evict_page(void){
  * Coremap accessor/setter methods 
  */
 
-int cm_get_paddr(int ix){
-    return COREMAP_TO_PADDR(ix);
+int cm_get_index(paddr_t pa){
+    return PADDR_TO_COREMAP(pa);
 }
 
 int cme_get_vaddr(int ix){
