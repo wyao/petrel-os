@@ -109,15 +109,14 @@ void ram_getsize(paddr_t *lo, paddr_t *hi);
  * We'll take up to 16 invalidations before just flushing the whole TLB.
  */
 
-struct tlbshootdown {
-	/*
-	 * Change this to what you need for your VM design.
-	 */
-	struct addrspace *ts_addrspace;
-	vaddr_t ts_vaddr;
-};
-
 #define TLBSHOOTDOWN_MAX 16
+
+/* PPN is the address to shoot down and done_handling is used for synchronizing 
+ * with subsequent instructions */
+struct tlbshootdown{
+	uint32_t ppn;
+	struct semaphore *done_handling;
+};
 
 
 #endif /* _MIPS_VM_H_ */

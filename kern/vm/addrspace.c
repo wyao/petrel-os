@@ -114,15 +114,20 @@ as_create(void)
 	 * ASST3 Initialization
 	 */
 	spinlock_init(as->pt_lock);
-	if (as->pt_lock == NULL){
+	if (as->pt_lock == NULL)
 		goto err1;
-	}
+	as->page_table = pt_create();
+	if (as->page_table == NULL)
+		goto err2
 
 	return as;
 
+	err2:
+	spinlock_cleanup(as->pt_lock);
 	err1:
 	kfree(as);
 	return NULL;
+
 	#endif
 }
 
@@ -197,6 +202,7 @@ as_destroy(struct addrspace *as)
 	 * ASST3 Destruction
 	 */
 	spinlock_cleanup(as->pt_lock);
+	pt_destroy(as->page_table);
 
 	#endif
 
@@ -353,7 +359,7 @@ void pt_destroy(struct pt_ent **pt){
 
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
-	if (dir != NULL)
+	if (dir != NULL) // or if it doesn't exist
 		return &dir[PT_SECONDARY_INDEX(as)];
 	return NULL;
 }
@@ -362,15 +368,14 @@ struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pte = get_pt_entry(as,va);
 	if (pte == NULL)
-		return NOMAP;
+		return INVALID_PADDR;
 	if (!pte_get_present(pte) || !pte_get_exists(pte))
-		return NOMAP;
+		return INVALID_PADDR;
 	paddr_t pa = (paddr_t)(pte_get_location(pte) << 12) + ADDRESS_OFFSET(va);
 	return pa;
 }
 
 
-//TODO: SHOULD WE CHECK IF PAGE EXISTS?
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	// If a secondary page table does not exist, allocate one
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
@@ -380,6 +385,9 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 		return ENOMEM;
 
 	struct pt_ent pte = get_pt_entry(as,va);
+	// Ensure that the VADDR doesn't already map to something or we messed up
+	KASSERT(!pte_get_exists(pte));
+
 	pte_set_location(pte,ppn);
 	pte_set_permissions(pte,permissions);
 	pte_set_present(pte,1);
@@ -388,14 +396,22 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	return 0;
 }
 
+int pt_remove(struct addrspace *as, vaddr_t va){
+	struct pt_ent *pte = get_pt_entry(as,va);
+	if (pte == NULL)
+		return -1;
+	pte_set_exists(pte,0);
+	return 0;
+}
+
 int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is_present){
 	struct pt_ent *pte = get_pt_entry(as,va);
 	if (pte == NULL)
-		return NOMAP;
+		return -1;
 
 	pte_set_location(pte,ppn);
 	pte_set_present(pte,is_present);
-	int newperms = pte_get_permissions(pte)&(~permissions); //TODO: ???
+	int newperms = pte_get_permissions(pte)&(~permissions);
 	pte_set_permissions(pte,newperms);
 
 	return 0;
