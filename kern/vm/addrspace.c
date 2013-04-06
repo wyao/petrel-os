@@ -221,6 +221,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 						pte_set_permissions(curr_new,pte_get_permissions(curr_old));
 						pte_set_exists(curr_new,1);
 						pte_set_present(curr_new,1);
+
+						cme_set_busy(free_index,0);
 					}
 					// Page is in swap space (TODO - for now treats it as if it didn't exist)
 					else{
