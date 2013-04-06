@@ -231,6 +231,10 @@ int choose_evict_page(void){
  * Coremap accessor/setter methods 
  */
 
+int cm_get_paddr(int ix){
+    return COREMAP_TO_PADDR(ix);
+}
+
 int cme_get_vaddr(int ix){
     return (coremap[ix].vaddr_base << 12);
 }
@@ -338,18 +342,27 @@ void coremap_bootstrap(void){
 
 /*
  * TLB Shootdown handlers (MACHINE DEPENDENT)
- * As these are interrupts, I assume that no locking of the CPU is required
+ * Interrupts are disabled with spl to ensure that TLB wipes are atomic
+ * (This may only be important for shootdown_all...)
  */
 
 void vm_tlbshootdown_all(void){
-    int i;
+    int i,spl;
+
+    spl = splhigh();
+
     for (i=0; i<NUM_TLB; i++)
         tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
+
+    splx(spl);
 }
 
 void vm_tlbshootdown(const struct tlbshootdown *ts){
     struct semaphore *sem = ts->done_handling;
     uint32_t ppn = ts->ppn;
+    int spl;
+
+    spl = splhigh();
 
     int ix = PADDR_TO_COREMAP(ppn);
 
@@ -365,6 +378,8 @@ void vm_tlbshootdown(const struct tlbshootdown *ts){
     done:
     if (sem != NULL)
         V(sem);
+
+    splx(spl);
 }
 
 /*

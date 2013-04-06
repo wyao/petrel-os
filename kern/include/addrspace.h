@@ -102,7 +102,7 @@ struct addrspace {
 	paddr_t as_stackpbase;
 #else
 	// ASST3 Fields
-	struct spinlock *pt_lock;
+	struct lock *pt_lock;
 	struct pt_ent **page_table;
 	// Heap pointers
 	vaddr_t heap_start;
