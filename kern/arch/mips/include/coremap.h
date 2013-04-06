@@ -17,7 +17,7 @@
 /* Core map structures and functions */
 struct cm_entry{
     struct thread *thread;
-    unsigned int disk_offset;  // Stores the disk offset when page in memory
+    int disk_offset;  // Stores the disk offset when page in memory
     vaddr_t vaddr_base:20;
     int junk:8;
     unsigned int state:2;
@@ -33,7 +33,8 @@ struct lock *cv_lock;
  */
 paddr_t alloc_one_page(struct thread *thread, vaddr_t va);
 vaddr_t alloc_kpages(int npages);
-//void free_kpages(vaddr_t va);
+void free_coremap_page(paddr_t pa, bool iskern);
+void free_kpages(vaddr_t va);
 int find_free_page(void);
 int choose_evict_page(void);
 

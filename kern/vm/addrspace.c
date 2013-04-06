@@ -179,7 +179,9 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	return 0;
 
 	#else
-
+	(void)old;
+	(void)ret;
+	return 0;
 	#endif
 }
 
@@ -350,7 +352,7 @@ void pt_destroy(struct pt_ent **pt){
 }
 
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
-	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)]
+	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
 	if (dir != NULL)
 		return &dir[PT_SECONDARY_INDEX(as)];
 	return NULL;

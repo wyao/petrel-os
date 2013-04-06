@@ -38,7 +38,7 @@
 #include <vm.h>
 #include "opt-dumbvm.h"
 
-#define USE_DUMBVM 1
+#define USE_DUMBVM 0
 
 #define NOMAP -1
 
@@ -104,7 +104,6 @@ struct addrspace {
 	// ASST3 Fields
 	struct spinlock *pt_lock;
 	struct pt_ent **page_table;
-	vaddr_t pt_directory; // Address of first-level page table (struct pt_ent **)
 	// Heap pointers
 	vaddr_t heap_start;
 	vaddr_t heap_end;

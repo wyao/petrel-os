@@ -44,7 +44,7 @@ static int reached_kpage_limit(void){
 static void mark_allocated(int ix, int iskern) {
     // Sanity check
     KASSERT(coremap[ix].thread == NULL);
-    KASSERT(coremap[ix].disk_offset == 0);
+    KASSERT(coremap[ix].disk_offset == -1);
     KASSERT(coremap[ix].vaddr_base == 0);
     KASSERT(coremap[ix].state == CME_FREE);
     KASSERT(coremap[ix].busy_bit == 1);
@@ -131,9 +131,56 @@ vaddr_t alloc_kpages(int npages) {
     return PADDR_TO_KVADDR(pa);
 }
 
-// void free_kpages(vaddr_t va) {
+/*
+ * free_coremap_page
+ *
+ * Synchronization: if not freeing kernel page, the physical page needs to be
+ * pinned prior to calling this function. This is to ensure that we are able to
+ * grab the page table lock and pin the page at the same time. Just for
+ * consistency's sake, we also leave it to the caller to unpin the physical
+ * page.
+ */
 
-// }
+void free_coremap_page(paddr_t pa, bool iskern) {
+    int ix = PADDR_TO_COREMAP(pa);
+
+    KASSERT(ix < num_cm_entries);
+
+    if (coremap[ix].state == CME_FREE) {
+        panic("free_coremap_page: freeing already free page\n");
+    }
+
+    KASSERT(iskern || cme_get_busy(ix));
+
+    // TODO: Flush TLB
+
+    if (iskern) {
+        KASSERT(coremap[ix].thread == NULL);
+        KASSERT(coremap[ix].disk_offset == -1);
+        KASSERT(coremap[ix].vaddr_base == 0);
+        KASSERT(coremap[ix].state == CME_FIXED);
+        KASSERT(coremap[ix].use_bit == 0);
+        spinlock_acquire(&stat_lock);
+        num_cm_kernel--;
+    }
+    else {
+        KASSERT(coremap[ix].thread != NULL);
+        coremap[ix].thread = NULL;
+        // TODO: clear swap space
+        KASSERT(coremap[ix].vaddr_base != 0);
+        KASSERT(coremap[ix].state != CME_DIRTY);
+        coremap[ix].use_bit = 0;
+        spinlock_acquire(&stat_lock);
+        num_cm_user--;
+    }
+    cme_set_state(ix, CME_FREE);
+    num_cm_free++;
+    spinlock_release(&stat_lock);
+}
+
+void free_kpages(vaddr_t va) {
+    free_coremap_page(KVADDR_TO_PADDR(va), true /* iskern */);
+}
 
 /*
  * Finds a non-busy page that is marked CME_FREE and returns its coremap index
@@ -280,7 +327,7 @@ void coremap_bootstrap(void){
     // Initialize coremap entries; basically zero everything
     for (i=0; i<(int)num_cm_entries; i++) {
         coremap[i].thread = NULL;
-        coremap[i].disk_offset = 0;
+        coremap[i].disk_offset = -1;
         coremap[i].vaddr_base = 0;
         coremap[i].state = CME_FREE;
         coremap[i].busy_bit = 0;

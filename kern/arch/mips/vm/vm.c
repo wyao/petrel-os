@@ -22,7 +22,6 @@
 /*
  * Wrap rma_stealmem in a spinlock.
  */
-static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;  // THIS IS IN BOTH ADDRSPACE.C AND HERE
 
 void
 vm_bootstrap(void)
@@ -46,6 +45,7 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
+	#if USE_DUMBVM
 	vaddr_t vbase1, vtop1, vbase2, vtop2, stackbase, stacktop;
 	paddr_t paddr;
 	int i;
@@ -134,4 +134,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	splx(spl);
 	return EFAULT;
+	#else
+	(void)faulttype;
+	(void)faultaddress;
+	return 0;
+	#endif
 }
