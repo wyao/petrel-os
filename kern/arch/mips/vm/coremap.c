@@ -287,3 +287,53 @@ void coremap_bootstrap(void){
         coremap[i].use_bit = 0;
     }
 }
+
+
+/*
+ * TLB Shootdown handlers (MACHINE DEPENDENT)
+ * As these are interrupts, I assume that no locking of the CPU is required
+ */
+
+void vm_tlbshootdown_all(void){
+    int i;
+    for (i=0; i<NUM_TLB; i++)
+        tlb_write(TLBHI_INVALID(i),TLBLO_INVALID(),i);
+}
+
+void vm_tlbshootdown(const struct tlbshootdown *ts){
+    struct semaphore *sem = ts->done_handling;
+    uint32_t ppn = ts->ppn;
+
+    int ix = PADDR_TO_COREMAP(ppn);
+
+    if (cme_get_state(ix) == CME_FREE)
+        goto done;
+
+    uint32_t vpn = (uint32_t)cme_get_vaddr(ix);
+    int ret = tlb_probe(vpn,0); // ppn is not used by function
+
+    if (ret >= 0) // tlb_probe returns negative value on failure or index on success
+        tlb_write(TLBHI_INVALID(ret),TLBLO_INVALID(),ret);
+
+    done:
+    if (sem != NULL)
+        V(sem);
+}
+
+/*
+ * Sets up tlbshootdown struct and permforms a shootdown synchronized by the semaphore
+ * Handles allocation and destruction of the semaphore
+ */
+void vm_tlbshootdown_wait(uint32_t ppn){
+    struct tlbshootdown ts;
+    struct semaphore *s = sem_create("wait on",0);
+
+    ts.done_handling = s;
+    ts.ppn = ppn;
+
+    vm_tlbshootdown(&ts);
+    P(s); // Only V-ed upon completion of shootdown
+
+    sem_destroy(s);
+}
+

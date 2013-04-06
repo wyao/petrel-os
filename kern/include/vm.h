@@ -60,6 +60,7 @@ int vm_fault(int faulttype, vaddr_t faultaddress);
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown_all(void);
 void vm_tlbshootdown(const struct tlbshootdown *);
+void vm_tlbshootdown_wait(uint32_t ppn);
 
 
 #endif /* _VM_H_ */
