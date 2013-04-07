@@ -251,11 +251,20 @@ as_destroy(struct addrspace *as)
 	/*
 	 * ASST3 Destruction
 	 */
+	unsigned num_regions, i;
+	struct region *ptr;
+
 	lock_acquire(as->pt_lock); // TODO: Do we need to synchronize this?
 	pt_destroy(as->page_table);
 	lock_release(as->pt_lock);
 	lock_destroy(as->pt_lock);
-	//TODO go through and free each regions element
+
+	// Free the recorded regions
+	num_regions = array_num(as->regions);
+	for (i=0; i<num_regions; i++) {
+		ptr = array_get(as->regions, i);
+		kfree(ptr);
+	}
 	array_destroy(as->regions);
 
 	#endif
@@ -341,6 +350,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	#else
 
+	int errno;
 	struct region *region;
 
 	/* Align the region. First, the base... */
@@ -363,6 +373,10 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	region->readable = readable;
 	region->writeable = writeable;
 	region->executable = executable;
+
+	errno = array_add(as->regions, region, NULL);
+	if (errno)
+		return errno;
 
 	return 0;
 	#endif
