@@ -37,6 +37,7 @@
 
 #include <vm.h>
 #include "opt-dumbvm.h"
+#include <array.h>
 
 #define USE_DUMBVM 0
 #define PT_TO_VADDR(i,j) (vaddr_t)((i << 24)+(j << 12))
@@ -44,6 +45,8 @@
 #define VM_READONLY 0
 #define VM_WRITEONLY 1
 #define VM_READWRITE 2
+
+#define MAX_REGIONS 10
 
 struct vnode;
 
@@ -95,6 +98,14 @@ int pt_update(struct addrspace *as, vaddr_t va,
  * You write this.
  */
 
+struct region {
+	vaddr_t base;
+	size_t sz;
+	int readable;
+	int writeable;
+	int executable;
+};
+
 struct addrspace {
 #if USE_DUMBVM
 	// DumbVM fields
@@ -112,6 +123,8 @@ struct addrspace {
 	// Heap pointers
 	vaddr_t heap_start;
 	vaddr_t heap_end;
+	struct array *regions;
+
 #endif
 };
 

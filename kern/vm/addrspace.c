@@ -121,6 +121,10 @@ as_create(void)
 	as->page_table = pt_create();
 	if (as->page_table == NULL)
 		goto err2;
+	as->regions = array_create();
+	if (as->regions == NULL)
+		goto err2;
+	as->heap_start = (vaddr_t)0;
 
 	return as;
 
@@ -250,8 +254,9 @@ as_destroy(struct addrspace *as)
 	lock_acquire(as->pt_lock); // TODO: Do we need to synchronize this?
 	pt_destroy(as->page_table);
 	lock_release(as->pt_lock);
-
 	lock_destroy(as->pt_lock);
+	//TODO go through and free each regions element
+	array_destroy(as->regions);
 
 	#endif
 
@@ -335,12 +340,30 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	return EUNIMP;
 
 	#else
-	(void)as;
-	(void)vaddr;
-	(void)sz;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
+
+	struct region *region;
+
+	/* Align the region. First, the base... */
+	sz += vaddr & ~(vaddr_t)PAGE_FRAME; //TODO WHAT IS THIS??
+	vaddr &= PAGE_FRAME;
+
+	/* ...and now the length. */
+	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
+
+	// Update heap_start
+	if (as->heap_start < (vaddr + sz))
+		as->heap_start = vaddr + sz;
+
+	// Record region (to be used in vm_fault)
+	region = kmalloc(sizeof(struct region));
+	if (region == NULL)
+		return 3 /* ENOMEM */;
+	region->base = vaddr;
+	region->sz = sz;
+	region->readable = readable;
+	region->writeable = writeable;
+	region->executable = executable;
+
 	return 0;
 	#endif
 }
