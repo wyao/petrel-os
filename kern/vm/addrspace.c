@@ -466,7 +466,8 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
  */
 
 struct pt_ent **pt_create(void){
-	return (struct pt_ent **)kmalloc(PAGE_SIZE*sizeof(struct pte_ent *));
+	KASSERT(PAGE_SIZE == 1024 * sizeof(struct pte_ent *));
+	return (struct pt_ent **)kmalloc(PAGE_SIZE);
 }
 
 void pt_destroy(struct pt_ent **pt){

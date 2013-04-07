@@ -67,7 +67,7 @@ int sys_execv(userptr_t progname, userptr_t args){
      * or in physical memory.  You may want to consider allocating smaller
      * buffers on demand, as you need them.
      */
-    char *args_buf = kmalloc(ARG_MAX*sizeof(char));
+    char *args_buf = kmalloc(PAGE_SIZE*sizeof(char));
     if (args_buf == NULL)
         goto err_;
 
@@ -109,7 +109,7 @@ int sys_execv(userptr_t progname, userptr_t args){
        * user's arguments are bound by ARG_MAX; you just assume the user will
        * oblige.
        */
-        result = copyinstr((const_userptr_t)usr_args[i], &args_buf[part], ARG_MAX, &got[i]);
+        result = copyinstr((const_userptr_t)usr_args[i], &args_buf[part], PAGE_SIZE, &got[i]);
         if (result){
             goto err3;
         }
