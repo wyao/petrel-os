@@ -466,8 +466,16 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
  */
 
 struct pt_ent **pt_create(void){
-	KASSERT(PAGE_SIZE == 1024 * sizeof(struct pte_ent *));
-	return (struct pt_ent **)kmalloc(PAGE_SIZE);
+	int i;
+	struct pt_ent **ret = (struct pt_ent **)kmalloc(PAGE_SIZE);
+
+	if (ret == NULL)
+		return NULL;
+
+	for (i=0; i<PAGE_SIZE/4; i++){
+		ret[i] = NULL;
+	}
+	return ret;
 }
 
 void pt_destroy(struct pt_ent **pt){
@@ -502,11 +510,21 @@ paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	// If a secondary page table does not exist, allocate one
+	int i;
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
-	if (pt_dir == NULL)
+	if (pt_dir == NULL) {
 		pt_dir = kmalloc(PAGE_SIZE);
-	if (pt_dir == NULL)
-		return ENOMEM;
+
+		if (pt_dir == NULL)
+			return ENOMEM;
+
+		for (i=0; i<PAGE_SIZE/4; i++){
+			pt_dir[i].page_paddr_base = 0;
+			pt_dir[i].permissions = 0;
+			pt_dir[i].present = 0;
+			pt_dir[i].exists = 0;
+		}
+	}
 
 	struct pt_ent *pte = get_pt_entry(as,va);
 	// Ensure that the VADDR doesn't already map to something or we messed up

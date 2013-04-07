@@ -167,8 +167,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		struct iovec iov;
 		struct uio myuio;
 		uio_kinit(&iov,&myuio,dest,PAGE_SIZE,0,UIO_READ);
-		if (uiomovezeros(PAGE_SIZE,&myuio))
+		if (uiomovezeros(PAGE_SIZE,&myuio)){
+			lock_release(curthread->t_addrspace->pt_lock);
 			return EFAULT; // TODO: Cleanup?
+		}
 
 		pt_insert(curthread->t_addrspace,faultaddress,new<<12,VM_READWRITE); // Should permissions be RW?
 		cme_set_busy(cm_get_index(new),0);
