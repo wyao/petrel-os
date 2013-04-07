@@ -124,6 +124,7 @@ struct addrspace {
 	vaddr_t heap_start;
 	vaddr_t heap_end;
 	struct array *regions;
+	bool is_loading;
 
 #endif
 };

@@ -125,6 +125,7 @@ as_create(void)
 	if (as->regions == NULL)
 		goto err2;
 	as->heap_start = (vaddr_t)0;
+	as->is_loading = false;
 
 	return as;
 
@@ -415,8 +416,10 @@ as_prepare_load(struct addrspace *as)
 	return 0;
 
 	#else
-	(void)as;
+
+	as->is_loading = true;
 	return 0;
+
 	#endif
 }
 
@@ -426,9 +429,12 @@ as_complete_load(struct addrspace *as)
 	/*
 	 * Write this.
 	 */
+	#if USE_DUMBVM
 
-	(void)as;
+	as->is_loading = false;
 	return 0;
+
+	#endif
 }
 
 int
