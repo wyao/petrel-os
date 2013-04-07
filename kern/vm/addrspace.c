@@ -213,10 +213,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 						memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
 
 						// Set new page table entry to a valid mapping to new location with same permissions
-						pte_set_location(curr_new,base_new>>12);
-						pte_set_permissions(curr_new,pte_get_permissions(curr_old));
-						pte_set_exists(curr_new,1);
-						pte_set_present(curr_new,1);
+						pt_update(new,PT_TO_VADDR(i,j),base_new>>12,0,1);
 
 						// Unbusy the coremap entry for the new page
 						cme_set_busy(cm_get_index(base_new),0);
@@ -435,8 +432,10 @@ void pt_destroy(struct pt_ent **pt){
 
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
-	if (pt_dir != NULL) // or if it doesn't exist
-		return &pt_dir[PT_SECONDARY_INDEX(va)];
+	if (pt_dir != NULL){
+		if (pte_get_exists(&pt_dir[PT_SECONDARY_INDEX(va)]))
+			return &pt_dir[PT_SECONDARY_INDEX(va)];
+	}
 	return NULL;
 }
 
@@ -487,6 +486,7 @@ int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is
 
 	pte_set_location(pte,ppn);
 	pte_set_present(pte,is_present);
+	pte_set_exists(pte,1);
 	int newperms = pte_get_permissions(pte)&(~permissions);
 	pte_set_permissions(pte,newperms);
 

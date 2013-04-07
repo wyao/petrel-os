@@ -9,6 +9,8 @@
 #include <addrspace.h>
 #include <vm.h>
 #include <machine/coremap.h>
+#include <synch.h>
+#include <uio.h>
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -122,8 +124,57 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	splx(spl);
 	return EFAULT;
 	#else
-	(void)faulttype;
-	(void)faultaddress;
+
+	struct pt_ent *pte = get_pt_entry(curthread->t_addrspace,faultaddress);
+	faultaddress &= PAGE_FRAME;
+
+	switch (faulttype) {
+	    case VM_FAULT_READONLY:
+	    // Check permissions - are we allowed to write?
+	    KASSERT(pte != NULL);
+		if (pte_get_permissions(pte) == VM_READONLY)
+			return EFAULT;
+
+		// If so, mark TLB and coremap entries dirty then return
+		paddr_t pa = pte_get_location(pte)<<12;
+		cme_set_state(cm_get_index(pa),CME_DIRTY);
+		int tlbindex = tlb_probe(faultaddress,0);
+		tlb_write(faultaddress,pa+TLBLO_DIRTY,tlbindex);
+		return 0;
+
+	    case VM_FAULT_READ:
+	    case VM_FAULT_WRITE:
+		break;
+	    default:
+		return EINVAL;
+	}
+
+	lock_acquire(curthread->t_addrspace->pt_lock);
+	// Page exists
+	if (pte != NULL){
+		if (pte_get_present(pte)){
+			paddr_t pa = pte_get_location(pte)<<12;
+			tlb_random(faultaddress,pa);
+		}
+		else {
+			// Page is in swap space (TODO)
+		}
+	}
+	else {
+		// First time accessing page - find new page and zero it
+		paddr_t new = alloc_one_page(curthread,faultaddress);
+		void *dest = (void *)PADDR_TO_KVADDR(new);
+		struct iovec iov;
+		struct uio myuio;
+		uio_kinit(&iov,&myuio,dest,PAGE_SIZE,0,UIO_WRITE);
+		if (uiomovezeros(PAGE_SIZE,&myuio))
+			return EFAULT; // TODO: Cleanup?
+
+		pt_insert(curthread->t_addrspace,faultaddress,new<<12,VM_READWRITE); // Should permissions be RW?
+		cme_set_busy(cm_get_index(new),0);
+	}
+	lock_release(curthread->t_addrspace->pt_lock);
+
 	return 0;
 	#endif
 }

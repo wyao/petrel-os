@@ -41,6 +41,10 @@
 #define USE_DUMBVM 0
 #define PT_TO_VADDR(i,j) (vaddr_t)((i << 24)+(j << 12))
 
+#define VM_READONLY 0
+#define VM_WRITEONLY 1
+#define VM_READWRITE 2
+
 struct vnode;
 
 
