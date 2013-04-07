@@ -431,6 +431,11 @@ as_complete_load(struct addrspace *as)
 	 */
 	#if USE_DUMBVM
 
+	(void)as;
+	return 0;
+
+	#else
+
 	as->is_loading = false;
 	return 0;
 

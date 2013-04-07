@@ -59,7 +59,6 @@ static void mark_allocated(int ix, int iskern) {
         coremap[ix].state = CME_DIRTY;
         num_cm_user += 1;
     }
-    num_cm_free -= 1;
     KASSERT(num_cm_free+num_cm_user+num_cm_kernel == num_cm_entries);
     spinlock_release(&stat_lock);
 }
@@ -190,7 +189,7 @@ int find_free_page(void){
     int i;
     for (i=0; i<(int)num_cm_entries; i++){
         if (cme_try_pin(i)){
-            if (cme_get_state(i == CME_FREE)) {
+            if (cme_get_state(i) == CME_FREE) {
                 spinlock_acquire(&stat_lock);
                 num_cm_free -= 1;
                 KASSERT(num_cm_free >= 0);

@@ -106,6 +106,7 @@ boot(void)
 
 	/* Early initialization. */
 	ram_bootstrap();
+	vm_bootstrap();
 	thread_bootstrap();
 	hardclock_bootstrap();
 	vfs_bootstrap();
