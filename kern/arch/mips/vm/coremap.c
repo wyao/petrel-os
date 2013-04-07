@@ -80,6 +80,8 @@ static void mark_allocated(int ix, int iskern) {
 paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
     int ix, iskern;
 
+    KASSERT(num_cm_entries != 0);
+
     iskern = (thread == NULL);
 
     // check there we leave enough pages for user
@@ -292,12 +294,6 @@ void coremap_bootstrap(void){
     paddr_t lo, hi;
     uint32_t npages, size;
 
-    /* Initialize synchronization primitives before we lose access
-     * to ram_stealmem()
-     */
-    written_to_disk = cv_create("written to disk");
-    cv_lock = lock_create("cv lock");
-
     ram_getsize(&lo, &hi);
 
     // Must be page aligned
@@ -336,6 +332,11 @@ void coremap_bootstrap(void){
         coremap[i].busy_bit = 0;
         coremap[i].use_bit = 0;
     }
+
+    /* Initialize synchronization primitives
+     */
+    written_to_disk = cv_create("written to disk");
+    cv_lock = lock_create("cv lock");
 }
 
 
