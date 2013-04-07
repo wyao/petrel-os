@@ -504,7 +504,7 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	// If a secondary page table does not exist, allocate one
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
 	if (pt_dir == NULL)
-		pt_dir = kmalloc(PAGE_SIZE*sizeof(struct pt_ent));
+		pt_dir = kmalloc(PAGE_SIZE);
 	if (pt_dir == NULL)
 		return ENOMEM;
 

@@ -166,7 +166,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		void *dest = (void *)PADDR_TO_KVADDR(new);
 		struct iovec iov;
 		struct uio myuio;
-		uio_kinit(&iov,&myuio,dest,PAGE_SIZE,0,UIO_WRITE);
+		uio_kinit(&iov,&myuio,dest,PAGE_SIZE,0,UIO_READ);
 		if (uiomovezeros(PAGE_SIZE,&myuio))
 			return EFAULT; // TODO: Cleanup?
 
