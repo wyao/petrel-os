@@ -11,7 +11,6 @@
 #include <machine/coremap.h>
 #include <synch.h>
 #include <uio.h>
-#include <spl.h>
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely

@@ -563,7 +563,7 @@ int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is
  */
 
 int pte_get_location(struct pt_ent *pte){
-	return (int)(pte->page_paddr_base << 12);
+	return (int)(pte->page_paddr_base);
 }
 void pte_set_location(struct pt_ent *pte, int location){
 	pte->page_paddr_base = location;
