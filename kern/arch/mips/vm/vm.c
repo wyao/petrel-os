@@ -11,6 +11,7 @@
 #include <machine/coremap.h>
 #include <synch.h>
 #include <uio.h>
+#include <spl.h>
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -123,6 +124,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	splx(spl);
 	return EFAULT;
+
 	#else
 
 	struct pt_ent *pte = get_pt_entry(curthread->t_addrspace,faultaddress);
@@ -136,10 +138,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return EFAULT;
 
 		// If so, mark TLB and coremap entries dirty then return
-		paddr_t pa = pte_get_location(pte)<<12;
+		paddr_t pa = (pte_get_location(pte)<<12);
+		uint32_t entrylo = (uint32_t)pa + TLBLO_DIRTY + TLBLO_VALID;
 		cme_set_state(cm_get_index(pa),CME_DIRTY);
 		int tlbindex = tlb_probe(faultaddress,0);
-		tlb_write(faultaddress,pa+TLBLO_DIRTY,tlbindex);
+		tlb_write(faultaddress, entrylo, tlbindex);
 		return 0;
 
 	    case VM_FAULT_READ:
@@ -153,8 +156,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	// Page exists
 	if (pte != NULL){
 		if (pte_get_present(pte)){
-			paddr_t pa = pte_get_location(pte)<<12;
-			tlb_random(faultaddress,pa);
+			uint32_t pa = (uint32_t)(pte_get_location(pte)<<12) + TLBLO_VALID;
+
+			// TODO prob and actually write to random index
+			tlb_random(faultaddress, pa);
 		}
 		else {
 			// Page is in swap space (TODO)
