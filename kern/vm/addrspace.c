@@ -46,7 +46,7 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
-#define PT_PRIMARY_INDEX(va) (int)va >> 22
+#define PT_PRIMARY_INDEX(va) (int)(va >> 22)
 #define PT_SECONDARY_INDEX(va) (int)((va >> 12) & 0x3FF)
 #define ADDRESS_OFFSET(addr) (int)(addr & 0xFFF)
 
@@ -466,8 +466,16 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
  */
 
 struct pt_ent **pt_create(void){
-	KASSERT(PAGE_SIZE == 1024 * sizeof(struct pte_ent *));
-	return (struct pt_ent **)kmalloc(PAGE_SIZE);
+	int i;
+	struct pt_ent **ret = (struct pt_ent **)kmalloc(PAGE_SIZE);
+
+	if (ret == NULL)
+		return NULL;
+
+	for (i=0; i<PAGE_SIZE/4; i++){
+		ret[i] = NULL;
+	}
+	return ret;
 }
 
 void pt_destroy(struct pt_ent **pt){
@@ -482,8 +490,7 @@ void pt_destroy(struct pt_ent **pt){
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
 	if (pt_dir != NULL){
-		if (pte_get_exists(&pt_dir[PT_SECONDARY_INDEX(va)]))
-			return &pt_dir[PT_SECONDARY_INDEX(va)];
+		return &pt_dir[PT_SECONDARY_INDEX(va)];
 	}
 	return NULL;
 }
@@ -502,11 +509,20 @@ paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	// If a secondary page table does not exist, allocate one
-	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
-	if (pt_dir == NULL)
-		pt_dir = kmalloc(PAGE_SIZE*sizeof(struct pt_ent));
-	if (pt_dir == NULL)
-		return ENOMEM;
+	int i;
+	if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL) {
+		as->page_table[PT_PRIMARY_INDEX(va)] = kmalloc(PAGE_SIZE);
+
+		if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL)
+			return ENOMEM;
+
+		for (i=0; i<PAGE_SIZE/4; i++){
+			as->page_table[PT_PRIMARY_INDEX(va)][i].page_paddr_base = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].permissions = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].present = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].exists = 0;
+		}
+	}
 
 	struct pt_ent *pte = get_pt_entry(as,va);
 	// Ensure that the VADDR doesn't already map to something or we messed up
@@ -547,7 +563,7 @@ int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is
  */
 
 int pte_get_location(struct pt_ent *pte){
-	return (int)(pte->page_paddr_base << 12);
+	return (int)(pte->page_paddr_base);
 }
 void pte_set_location(struct pt_ent *pte, int location){
 	pte->page_paddr_base = location;
