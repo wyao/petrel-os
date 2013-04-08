@@ -172,7 +172,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return EFAULT; // TODO: Cleanup?
 		}
 
-		pt_insert(curthread->t_addrspace,faultaddress,new<<12,VM_READWRITE); // Should permissions be RW?
+		pt_insert(curthread->t_addrspace,faultaddress,new>>12,VM_READWRITE); // Should permissions be RW?
 		cme_set_busy(cm_get_index(new),0);
 	}
 	lock_release(curthread->t_addrspace->pt_lock);

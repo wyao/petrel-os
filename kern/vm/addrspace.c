@@ -46,7 +46,7 @@
  * used. The cheesy hack versions in dumbvm.c are used instead.
  */
 
-#define PT_PRIMARY_INDEX(va) (int)va >> 22
+#define PT_PRIMARY_INDEX(va) (int)(va >> 22)
 #define PT_SECONDARY_INDEX(va) (int)((va >> 12) & 0x3FF)
 #define ADDRESS_OFFSET(addr) (int)(addr & 0xFFF)
 
@@ -490,8 +490,7 @@ void pt_destroy(struct pt_ent **pt){
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
 	if (pt_dir != NULL){
-		if (pte_get_exists(&pt_dir[PT_SECONDARY_INDEX(va)]))
-			return &pt_dir[PT_SECONDARY_INDEX(va)];
+		return &pt_dir[PT_SECONDARY_INDEX(va)];
 	}
 	return NULL;
 }
@@ -511,18 +510,17 @@ paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	// If a secondary page table does not exist, allocate one
 	int i;
-	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
-	if (pt_dir == NULL) {
-		pt_dir = kmalloc(PAGE_SIZE);
+	if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL) {
+		as->page_table[PT_PRIMARY_INDEX(va)] = kmalloc(PAGE_SIZE);
 
-		if (pt_dir == NULL)
+		if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL)
 			return ENOMEM;
 
 		for (i=0; i<PAGE_SIZE/4; i++){
-			pt_dir[i].page_paddr_base = 0;
-			pt_dir[i].permissions = 0;
-			pt_dir[i].present = 0;
-			pt_dir[i].exists = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].page_paddr_base = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].permissions = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].present = 0;
+			as->page_table[PT_PRIMARY_INDEX(va)][i].exists = 0;
 		}
 	}
 
