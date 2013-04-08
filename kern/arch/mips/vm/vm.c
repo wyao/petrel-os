@@ -130,9 +130,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
-	    // Check permissions - are we allowed to write?
+	    // Check permissions - are we allowed to write? 
+	    // (either by permission or if we are in the middle of loading)
 	    KASSERT(pte != NULL);
-		if (pte_get_permissions(pte) == VM_READONLY)
+		if (!(pte_get_permissions(pte) & VM_WRITE) && !curthread->t_addrspace->is_loading)
 			return EFAULT;
 
 		// If so, mark TLB and coremap entries dirty then return
@@ -170,7 +171,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		if (uiomovezeros(PAGE_SIZE,&myuio))
 			return EFAULT; // TODO: Cleanup?
 
-		pt_insert(curthread->t_addrspace,faultaddress,new<<12,VM_READWRITE); // Should permissions be RW?
+		int permissions = VM_READ & VM_WRITE & VM_EXEC;
+		pt_insert(curthread->t_addrspace,faultaddress,new<<12,permissions); // Should permissions be RW?
 		cme_set_busy(cm_get_index(new),0);
 	}
 	lock_release(curthread->t_addrspace->pt_lock);
