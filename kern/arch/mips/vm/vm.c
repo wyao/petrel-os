@@ -177,7 +177,14 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return EFAULT; // TODO: Cleanup?
 		}
 
-		int permissions = VM_READ & VM_WRITE & VM_EXEC;
+		int permissions = as_get_permissions(curthread->t_addrspace,faultaddress);
+		
+		// Virtual address did not fall within a defined region
+		if (permissions < 0){
+			lock_release(curthread->t_addrspace->pt_lock);
+			return EFAULT;
+		}
+		
 		pt_insert(curthread->t_addrspace,faultaddress,new>>12,permissions); // Should permissions be RW?
 		cme_set_busy(cm_get_index(new),0);
 	}

@@ -461,6 +461,29 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	#endif
 }
 
+int as_get_permissions(struct addrspace *as, vaddr_t va){
+	int i;
+	int permissions = 0;
+	struct region *r;
+	int len = array_num(as->regions);
+
+	for (i=0; i<len; i++){
+		r = array_get(as->regions,i);
+		if (va > r->base && va < (r->base + r->sz)){
+			if (r->readable)
+				permissions += VM_READ;
+			if (r->writeable)
+				permissions += VM_WRITE;
+			if (r->executable)
+				permissions += VM_EXEC;
+			return permissions;
+		}
+	}
+	// Control should never reach here
+	return -1;
+}
+
+
 /*
  * Page table helper methods
  */
