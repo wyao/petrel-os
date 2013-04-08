@@ -450,15 +450,11 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	 */
 	#if USE_DUMBVM
 	KASSERT(as->as_stackpbase != 0);
+	#endif
 
 	*stackptr = USERSTACK;
-	return 0;
-
-	#else
 	(void)as;
-	(void)stackptr;
 	return 0;
-	#endif
 }
 
 int as_get_permissions(struct addrspace *as, vaddr_t va){

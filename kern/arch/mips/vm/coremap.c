@@ -19,8 +19,6 @@ static struct spinlock busy_lock = SPINLOCK_INITIALIZER;
 static struct spinlock stat_lock = SPINLOCK_INITIALIZER;
 static int clock_hand;
 
-static uint32_t base; // Number of pages taken up by coremap
-
 static int num_cm_entries;
 static int num_cm_free;
 static int num_cm_kernel;

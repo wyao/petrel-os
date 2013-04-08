@@ -13,6 +13,9 @@
 #define CME_DIRTY 3
 
 #define INVALID_PADDR ((paddr_t)0)
+#define PADDR_IS_VALID(paddr) ((paddr >= base*PAGE_SIZE) && (paddr % PAGE_SIZE == 0))
+
+uint32_t base; // Number of pages taken up by coremap
 
 /* Core map structures and functions */
 struct cm_entry{

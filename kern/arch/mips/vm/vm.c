@@ -156,9 +156,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	// Page exists
 	if (pte != NULL){
 		if (pte_get_present(pte)){
-			uint32_t pa = (uint32_t)(pte_get_location(pte)<<12) + TLBLO_VALID;
+			uint32_t pa = (uint32_t)(pte_get_location(pte)<<12);
+			KASSERT(PADDR_IS_VALID(pa));
 
 			// TODO prob and actually write to random index
+			pa = pa+TLBLO_VALID;
 			tlb_random(faultaddress, pa);
 		}
 		else {
@@ -171,13 +173,16 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		void *dest = (void *)PADDR_TO_KVADDR(new);
 		struct iovec iov;
 		struct uio myuio;
+
+		KASSERT(PADDR_IS_VALID(new));
+
 		uio_kinit(&iov,&myuio,dest,PAGE_SIZE,0,UIO_READ);
 		if (uiomovezeros(PAGE_SIZE,&myuio)){
 			lock_release(curthread->t_addrspace->pt_lock);
 			return EFAULT; // TODO: Cleanup?
 		}
 
-		int permissions = as_get_permissions(curthread->t_addrspace,faultaddress);
+		int permissions = 7;//as_get_permissions(curthread->t_addrspace,faultaddress);
 		
 		// Virtual address did not fall within a defined region
 		if (permissions < 0){
