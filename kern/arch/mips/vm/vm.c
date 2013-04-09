@@ -126,20 +126,30 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	#else
 
-	struct pt_ent *pte = get_pt_entry(curthread->t_addrspace,faultaddress);
-	faultaddress &= PAGE_FRAME;
+	struct addrspace *as;
+
+	faultaddress &= PAGE_FRAME; // Page align
+	KASSERT(faultaddress < MIPS_KSEG0);
+
+	as = curthread->t_addrspace;
+	if (as == NULL)
+		return EFAULT;
+
+	// TODO: ensure that faultaddress falls within a region, heap, or stack
+
+	struct pt_ent *pte = get_pt_entry(as,faultaddress);
 
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 	    // Check permissions - are we allowed to write? 
 	    // (either by permission or if we are in the middle of loading)
 	    KASSERT(pte != NULL);
-		if (!(pte_get_permissions(pte) & VM_WRITE) && !curthread->t_addrspace->is_loading)
+		if (!(pte_get_permissions(pte) & VM_WRITE) && !as->is_loading)
 			return EFAULT;
 
 		// If so, mark TLB and coremap entries dirty then return
 		paddr_t pa = (pte_get_location(pte)<<12);
-		uint32_t entrylo = (uint32_t)pa + TLBLO_DIRTY + TLBLO_VALID;
+		uint32_t entrylo = pa | TLBLO_DIRTY | TLBLO_VALID;
 		cme_set_state(cm_get_index(pa),CME_DIRTY);
 		int tlbindex = tlb_probe(faultaddress,0);
 		tlb_write(faultaddress, entrylo, tlbindex);
@@ -152,7 +162,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return EINVAL;
 	}
 
-	lock_acquire(curthread->t_addrspace->pt_lock);
+	lock_acquire(as->pt_lock);
 	// Page exists
 	if (pte != NULL){
 		if (pte_get_present(pte)){
@@ -160,8 +170,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			KASSERT(PADDR_IS_VALID(pa));
 
 			// TODO prob and actually write to random index
-			pa = pa+TLBLO_VALID;
-			tlb_random(faultaddress, pa);
+			tlb_random(faultaddress, pa | TLBLO_VALID);
 		}
 		else {
 			// Page is in swap space (TODO)
@@ -170,30 +179,23 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	else {
 		// First time accessing page - find new page and zero it
 		paddr_t new = alloc_one_page(curthread,faultaddress);
-		void *dest = (void *)PADDR_TO_KVADDR(new);
-		struct iovec iov;
-		struct uio myuio;
 
 		KASSERT(PADDR_IS_VALID(new));
 
-		uio_kinit(&iov,&myuio,dest,PAGE_SIZE,0,UIO_READ);
-		if (uiomovezeros(PAGE_SIZE,&myuio)){
-			lock_release(curthread->t_addrspace->pt_lock);
-			return EFAULT; // TODO: Cleanup?
-		}
+		bzero((void *)PADDR_TO_KVADDR(new), PAGE_SIZE);
 
-		int permissions = 7;//as_get_permissions(curthread->t_addrspace,faultaddress);
+		int permissions = 7;//as_get_permissions(as,faultaddress);
 		
 		// Virtual address did not fall within a defined region
 		if (permissions < 0){
-			lock_release(curthread->t_addrspace->pt_lock);
+			lock_release(as->pt_lock);
 			return EFAULT;
 		}
 		
-		pt_insert(curthread->t_addrspace,faultaddress,new>>12,permissions); // Should permissions be RW?
+		pt_insert(as,faultaddress,new>>12,permissions); // Should permissions be RW?
 		cme_set_busy(cm_get_index(new),0);
 	}
-	lock_release(curthread->t_addrspace->pt_lock);
+	lock_release(as->pt_lock);
 
 	return 0;
 	#endif

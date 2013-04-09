@@ -507,7 +507,11 @@ void pt_destroy(struct pt_ent **pt){
 }
 
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
-	struct pt_ent *pt_dir = as->page_table[PT_PRIMARY_INDEX(va)];
+	int index = PT_PRIMARY_INDEX(va);
+
+	KASSERT(index >= 0 && index < 1024);
+
+	struct pt_ent *pt_dir = as->page_table[index];
 	if (pt_dir != NULL){
 		return &pt_dir[PT_SECONDARY_INDEX(va)];
 	}
@@ -529,6 +533,11 @@ paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	// If a secondary page table does not exist, allocate one
 	int i;
+
+	KASSERT(as != NULL);
+	KASSERT((ppn & 0xffa00000) == 0);
+	KASSERT(permissions >= 0 && permissions <= 7);
+
 	if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL) {
 		as->page_table[PT_PRIMARY_INDEX(va)] = kmalloc(PAGE_SIZE);
 
