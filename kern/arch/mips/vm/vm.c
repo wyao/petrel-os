@@ -128,7 +128,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	struct addrspace *as;
 	uint32_t ehi, elo;
-	int tlbindex, ret;
+	int tlbindex, permissions, ret;
+	uint32_t pa;
 
 	faultaddress &= PAGE_FRAME; // Page align
 	KASSERT(faultaddress < MIPS_KSEG0);
@@ -176,7 +177,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	// Page exists
 	if (pte != NULL){
 		if (pte_get_present(pte)){
-			uint32_t pa = (uint32_t)(pte_get_location(pte)<<12);
+			pa = (uint32_t)(pte_get_location(pte)<<12);
 			KASSERT(PADDR_IS_VALID(pa));
 
 			// TODO prob and actually write to random index
@@ -185,18 +186,36 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			tlb_random(ehi, elo);
 		}
 		else {
+			// Page not present, but may exist (ie in swap)
+			permissions = 7;//as_get_permissions(as,faultaddress);
+
+			// Virtual address did not fall within a defined region
+			if (permissions < 0){
+				lock_release(as->pt_lock);
+				return EFAULT;
+			}
+
+			pa = (uint32_t) (pte_get_location(pte)); // No shift here
+			ret = pt_insert(as,faultaddress,pa,permissions);
+			if (ret) {
+				lock_release(as->pt_lock);
+				return ret;
+			}
+
 			// Page is in swap space (TODO)
 		}
 	}
 	else {
-		// First time accessing page - find new page and zero it
+		/* First time accessing page table entry in directory.
+		 * Find new page and zero it.
+		 */
 		paddr_t new = alloc_one_page(curthread,faultaddress);
 
 		KASSERT(PADDR_IS_VALID(new));
 
 		bzero((void *)PADDR_TO_KVADDR(new), PAGE_SIZE);
 
-		int permissions = 7;//as_get_permissions(as,faultaddress);
+		permissions = 7;//as_get_permissions(as,faultaddress);
 		
 		// Virtual address did not fall within a defined region
 		if (permissions < 0){
