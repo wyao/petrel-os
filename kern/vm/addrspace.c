@@ -199,11 +199,11 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	struct pt_ent *curr_old, *curr_new;
 	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
 
-	for (i=0; i<PAGE_SIZE; i++){
+	for (i=0; i<PAGE_ENTRIES; i++){
 		if (old->page_table[i] != NULL){
 			new->page_table[i] = kmalloc(PAGE_SIZE*sizeof(struct pt_ent));
 			// For each page table entry
-			for (j=0; j<PAGE_SIZE; j++){
+			for (j=0; j<PAGE_ENTRIES; j++){
 				curr_old = &old->page_table[i][j];
 				curr_new = &new->page_table[i][j];
 				// If the entry exists (ie, page is in memory or swap space)
@@ -491,7 +491,7 @@ struct pt_ent **pt_create(void){
 	if (ret == NULL)
 		return NULL;
 
-	for (i=0; i<PAGE_SIZE/4; i++){
+	for (i=0; i<PAGE_ENTRIES; i++){
 		ret[i] = NULL;
 	}
 	return ret;
@@ -499,7 +499,7 @@ struct pt_ent **pt_create(void){
 
 void pt_destroy(struct pt_ent **pt){
 	int i;
-	for (i=0; i<PAGE_SIZE; i++){
+	for (i=0; i<PAGE_ENTRIES; i++){
 		if (pt[i] != NULL)
 			kfree(pt[i]);
 	}
@@ -544,7 +544,7 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 		if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL)
 			return ENOMEM;
 
-		for (i=0; i<PAGE_SIZE/4; i++){
+		for (i=0; i<PAGE_ENTRIES; i++){
 			as->page_table[PT_PRIMARY_INDEX(va)][i].page_paddr_base = 0;
 			as->page_table[PT_PRIMARY_INDEX(va)][i].permissions = 0;
 			as->page_table[PT_PRIMARY_INDEX(va)][i].present = 0;

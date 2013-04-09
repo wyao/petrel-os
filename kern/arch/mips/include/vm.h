@@ -35,6 +35,7 @@
  * Machine-dependent VM system definitions.
  */
 
+#define PAGE_ENTRIES 1024       /* pt entries on a single page */
 #define PAGE_SIZE  4096         /* size of VM page */
 #define PAGE_FRAME 0xfffff000   /* mask for getting page number from addr */
 
