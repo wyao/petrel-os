@@ -262,9 +262,15 @@ as_destroy(struct addrspace *as)
 
 	// Free the recorded regions
 	num_regions = array_num(as->regions);
-	for (i=0; i<num_regions; i++) {
+	i = num_regions - 1;
+	while (1){
 		ptr = array_get(as->regions, i);
 		kfree(ptr);
+		array_remove(as->regions, i);
+
+		if (i == 0)
+			break;
+		i--;
 	}
 	array_destroy(as->regions);
 
