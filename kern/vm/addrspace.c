@@ -535,7 +535,7 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 	int i;
 
 	KASSERT(as != NULL);
-	KASSERT((ppn & 0xffa00000) == 0);
+	KASSERT((ppn & 0xfff00000) == 0);
 	KASSERT(permissions >= 0 && permissions <= 7);
 
 	if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL) {

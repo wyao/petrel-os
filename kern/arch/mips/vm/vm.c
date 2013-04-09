@@ -127,6 +127,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	#else
 
 	struct addrspace *as;
+	uint32_t ehi, elo;
+	int tlbindex, ret;
 
 	faultaddress &= PAGE_FRAME; // Page align
 	KASSERT(faultaddress < MIPS_KSEG0);
@@ -149,10 +151,18 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		// If so, mark TLB and coremap entries dirty then return
 		paddr_t pa = (pte_get_location(pte)<<12);
-		uint32_t entrylo = pa | TLBLO_DIRTY | TLBLO_VALID;
+
 		cme_set_state(cm_get_index(pa),CME_DIRTY);
-		int tlbindex = tlb_probe(faultaddress,0);
-		tlb_write(faultaddress, entrylo, tlbindex);
+
+		elo = (pa & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
+		ehi = faultaddress & TLBHI_VPAGE;
+		tlbindex = tlb_probe(faultaddress,0);
+		if (tlbindex < -1) {
+			tlb_random(ehi, elo);
+		}
+		else {
+			tlb_write(ehi, elo, tlbindex);
+		}
 		return 0;
 
 	    case VM_FAULT_READ:
@@ -170,7 +180,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			KASSERT(PADDR_IS_VALID(pa));
 
 			// TODO prob and actually write to random index
-			tlb_random(faultaddress, pa | TLBLO_VALID);
+			ehi = faultaddress & TLBHI_VPAGE;
+			elo = (pa & TLBLO_PPAGE) | TLBLO_VALID;
+			tlb_random(ehi, elo);
 		}
 		else {
 			// Page is in swap space (TODO)
@@ -192,7 +204,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return EFAULT;
 		}
 		
-		pt_insert(as,faultaddress,new>>12,permissions); // Should permissions be RW?
+		ret = pt_insert(as,faultaddress,new>>12,permissions); // Should permissions be RW?
+		if (ret) {
+			lock_release(as->pt_lock);
+			return ret;
+		}
 		cme_set_busy(cm_get_index(new),0);
 	}
 	lock_release(as->pt_lock);
