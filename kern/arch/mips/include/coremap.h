@@ -49,18 +49,18 @@ int cm_get_index(paddr_t pa);
 int cme_get_vaddr(int ix);
 void cme_set_vaddr(int ix, int vaddr);
 
-int cme_get_state(int ix);
-void cme_set_state(int ix, int state);
+unsigned cme_get_state(int ix);
+void cme_set_state(int ix, unsigned state);
 
 /* core map entry pinning */
-int cme_get_busy(int ix);
-void cme_set_busy(int ix, int busy);
+unsigned cme_get_busy(int ix);
+void cme_set_busy(int ix, unsigned busy);
 
 // Attempts to (synchronously) acquire busy bit on given CME and returns success or failure
-int cme_try_pin(int ix);
+unsigned cme_try_pin(int ix);
 
-int cme_get_use(int ix);
-void cme_set_use(int ix, int use);
+unsigned cme_get_use(int ix);
+void cme_set_use(int ix, unsigned use);
 
 /*
  * Machine-dependent functions

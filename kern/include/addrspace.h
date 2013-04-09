@@ -54,8 +54,8 @@ struct vnode;
 struct pt_ent {
 	int page_paddr_base:20; // This field will contain disk offset if page not present
 	int permissions:10;
-	int present:1;
-	int exists:1;
+	unsigned present:1;
+	unsigned exists:1;
 };
 
 
@@ -63,10 +63,10 @@ int pte_get_location(struct pt_ent *pte);
 void pte_set_location(struct pt_ent *pte, int location);
 int pte_get_permissions(struct pt_ent *pte);
 void pte_set_permissions(struct pt_ent *pte, int permissions);
-int pte_get_present(struct pt_ent *pte);
-void pte_set_present(struct pt_ent *pte, int present);
-int pte_get_exists(struct pt_ent *pte);
-void pte_set_exists(struct pt_ent *pte, int exists);
+unsigned pte_get_present(struct pt_ent *pte);
+void pte_set_present(struct pt_ent *pte, unsigned present);
+unsigned pte_get_exists(struct pt_ent *pte);
+void pte_set_exists(struct pt_ent *pte, unsigned exists);
 
 
 /*
@@ -88,7 +88,7 @@ paddr_t va_to_pa(struct addrspace *as, vaddr_t va); //TODO: CREATE IF DOESN'T EX
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions);
 int pt_remove(struct addrspace *as, vaddr_t va);
 int pt_update(struct addrspace *as, vaddr_t va, 
-	int ppn, int permissions, int is_present);
+	int ppn, int permissions, unsigned is_present);
 
 
 /*

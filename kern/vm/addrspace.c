@@ -565,6 +565,7 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 }
 
 int pt_remove(struct addrspace *as, vaddr_t va){
+	KASSERT(as != NULL);
 	struct pt_ent *pte = get_pt_entry(as,va);
 	if (pte == NULL)
 		return -1;
@@ -572,7 +573,7 @@ int pt_remove(struct addrspace *as, vaddr_t va){
 	return 0;
 }
 
-int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, int is_present){
+int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, unsigned is_present){
 	struct pt_ent *pte = get_pt_entry(as,va);
 	if (pte == NULL)
 		return -1;
@@ -602,15 +603,15 @@ int pte_get_permissions(struct pt_ent *pte){
 void pte_set_permissions(struct pt_ent *pte, int permissions){
 	pte->permissions = permissions;
 }
-int pte_get_present(struct pt_ent *pte){
-	return (int)pte->present;
+unsigned pte_get_present(struct pt_ent *pte){
+	return pte->present;
 }
-void pte_set_present(struct pt_ent *pte, int present){
+void pte_set_present(struct pt_ent *pte, unsigned present){
 	pte->present = (present > 0);
 }
-int pte_get_exists(struct pt_ent *pte){
-	return (int)pte->exists;
+unsigned pte_get_exists(struct pt_ent *pte){
+	return pte->exists;
 }
-void pte_set_exists(struct pt_ent *pte, int exists){
+void pte_set_exists(struct pt_ent *pte, unsigned exists){
 	pte->exists = (exists > 0);
 }

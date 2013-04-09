@@ -241,25 +241,25 @@ void cme_set_vaddr(int ix, int vaddr){
     coremap[ix].vaddr_base = vaddr >> 12;
 }
 
-int cme_get_state(int ix){
-    return (int)(coremap[ix].state);
+unsigned cme_get_state(int ix){
+    return (unsigned)(coremap[ix].state);
 }
-void cme_set_state(int ix, int state){
+void cme_set_state(int ix, unsigned state){
     coremap[ix].state = state;
 }
 
 /* core map entry pinning */
-int cme_get_busy(int ix){
-    return (int)coremap[ix].busy_bit;
+unsigned cme_get_busy(int ix){
+    return (unsigned)coremap[ix].busy_bit;
 }
-void cme_set_busy(int ix, int busy){
+void cme_set_busy(int ix, unsigned busy){
     coremap[ix].busy_bit = (busy > 0);
 }
 // Returns 1 on success (cme[ix] was not busy) and 0 on failure
-int cme_try_pin(int ix){
+unsigned cme_try_pin(int ix){
     spinlock_acquire(&busy_lock);
 
-    int ret = cme_get_busy(ix);
+    unsigned ret = cme_get_busy(ix);
     if (!ret)
         cme_set_busy(ix,1);
 
@@ -267,10 +267,10 @@ int cme_try_pin(int ix){
     return ~ret;
 }
 
-int cme_get_use(int ix){
-    return (int)coremap[ix].use_bit;
+unsigned cme_get_use(int ix){
+    return (unsigned)coremap[ix].use_bit;
 }
-void cme_set_use(int ix, int use){
+void cme_set_use(int ix, unsigned use){
     coremap[ix].use_bit = (use > 0);
 }
 
