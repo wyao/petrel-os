@@ -174,41 +174,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	}
 
 	lock_acquire(as->pt_lock);
-	// Page exists
-	if (pte != NULL){
-		if (pte_get_present(pte)){
-			pa = (uint32_t)(pte_get_location(pte)<<12);
-			KASSERT(PADDR_IS_VALID(pa));
-
-			// TODO prob and actually write to random index
-			ehi = faultaddress & TLBHI_VPAGE;
-			elo = (pa & TLBLO_PPAGE) | TLBLO_VALID;
-			tlb_random(ehi, elo);
-		}
-		else {
-			// Page not present, but may exist (ie in swap)
-			permissions = 7;//as_get_permissions(as,faultaddress);
-
-			// Virtual address did not fall within a defined region
-			if (permissions < 0){
-				lock_release(as->pt_lock);
-				return EFAULT;
-			}
-
-			pa = (uint32_t) (pte_get_location(pte)); // No shift here
-			ret = pt_insert(as,faultaddress,pa,permissions);
-			if (ret) {
-				lock_release(as->pt_lock);
-				return ret;
-			}
-
-			// Page is in swap space (TODO)
-		}
-	}
-	else {
-		/* First time accessing page table entry in directory.
-		 * Find new page and zero it.
-		 */
+	if (pte == NULL || !pte_get_exists(pte)) {
+		// First time accessing page
 		paddr_t new = alloc_one_page(curthread,faultaddress);
 
 		KASSERT(PADDR_IS_VALID(new));
@@ -229,6 +196,22 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			return ret;
 		}
 		cme_set_busy(cm_get_index(new),0);
+	}
+	else { // Page exists either in memory or in swap
+		if (pte_get_present(pte)){
+			pa = (uint32_t)(pte_get_location(pte)<<12);
+			ret = PADDR_IS_VALID(pa);
+			if (!ret)
+				KASSERT(0);
+
+			// TODO prob and actually write to random index
+			ehi = faultaddress & TLBHI_VPAGE;
+			elo = (pa & TLBLO_PPAGE) | TLBLO_VALID;
+			tlb_random(ehi, elo);
+		}
+		else {
+			// Page is in swap space (TODO)
+		}
 	}
 	lock_release(as->pt_lock);
 
