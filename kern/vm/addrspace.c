@@ -125,6 +125,7 @@ as_create(void)
 	if (as->regions == NULL)
 		goto err2;
 	as->heap_start = (vaddr_t)0;
+	as->heap_end = (vaddr_t)0;
 	as->is_loading = false;
 
 	return as;
