@@ -132,7 +132,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo, pa, num_regions, i;
 	int tlbindex, permissions, ret;
 	struct region *region;
-	bool valid;
+	bool valid = false;
 
 	faultaddress &= PAGE_FRAME; // Page align
 	KASSERT(faultaddress < MIPS_KSEG0);
