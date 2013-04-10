@@ -76,7 +76,7 @@ static void mark_allocated(int ix, int iskern) {
 /* alloc_one_page
  *
  * Allocate one page of kernel memory. Allocates kernel page if thread is
- * not NULL, eles allocates user page.
+ * not NULL, else allocates user page.
  *
  * Synchronization: note that by not locking stat_lock the entire time
  * it is possible for num_cm_user to be less than MIN_USER_CM_PAGES, but
