@@ -148,7 +148,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if (faultaddress >= as->heap_start && faultaddress < as->heap_end) {
 		valid = true; // In heap
 	}
-	else if (faultaddress > USERSTACK - PAGE_SIZE * STACK_PAGES) {
+	else if (faultaddress >= USERSTACK - PAGE_SIZE * STACK_PAGES) {
 		valid = true; // In stack or kernel memory
 	}
 	else { // Check regions
@@ -156,14 +156,15 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		for (i=0; i<num_regions; i++) {
 			region = array_get(as->regions, i);
 			if (faultaddress >= region->base &&
-				faultaddress < (region->base + region->sz) ){
+				faultaddress <= (region->base + region->sz) ){
 				valid = true;
 				break;
 			}
 		}
 	}
-	if (!valid)
-		return EFAULT;
+	// if (!valid) { TODO: Fix this code
+	// 	return EFAULT;
+	// }
 
 	struct pt_ent *pte = get_pt_entry(as,faultaddress);
 

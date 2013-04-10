@@ -385,7 +385,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	int errno;
 	struct region *region;
-
 	/* Align the region. First, the base... */
 	sz += vaddr & ~(vaddr_t)PAGE_FRAME; //TODO WHAT IS THIS??
 	vaddr &= PAGE_FRAME;
@@ -394,8 +393,10 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
 
 	// Update heap_start
-	if (as->heap_start < (vaddr + sz))
+	if (as->heap_start < (vaddr + sz)) {
 		as->heap_start = vaddr + sz;
+		as->heap_end = as->heap_start;
+	}
 
 	// Record region (to be used in vm_fault)
 	region = kmalloc(sizeof(struct region));
@@ -406,7 +407,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	region->readable = readable;
 	region->writeable = writeable;
 	region->executable = executable;
-
 	errno = array_add(as->regions, region, NULL);
 	if (errno)
 		return errno;
@@ -530,10 +530,19 @@ struct pt_ent **pt_create(void){
 }
 
 void pt_destroy(struct pt_ent **pt){
-	int i;
+	int i, j;
+	paddr_t pa;
 	for (i=0; i<PAGE_ENTRIES; i++){
-		if (pt[i] != NULL)
+		if (pt[i] != NULL) {
+			// FREE CM entry
+			for (j=0; j<PAGE_ENTRIES; j++) {
+				if (&pt[i][j] != NULL) { //TODO is this line right?
+					pa = pte_get_location(&pt[i][j]) << 12;
+					free_coremap_page(pa, false /* iskern */);
+				}
+			}
 			kfree(pt[i]);
+		}
 	}
 	kfree(pt);
 }

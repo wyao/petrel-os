@@ -49,6 +49,8 @@ static void mark_allocated(int ix, int iskern) {
     KASSERT(coremap[ix].use_bit == 0);
 
     spinlock_acquire(&stat_lock);
+    num_cm_free -= 1;
+    KASSERT(num_cm_free >= 0);
     if (iskern) {
         coremap[ix].state = CME_FIXED;
         num_cm_kernel += 1;
@@ -167,6 +169,7 @@ void free_coremap_page(paddr_t pa, bool iskern) {
         coremap[ix].thread = NULL;
         // TODO: clear swap space
         KASSERT(coremap[ix].vaddr_base != 0);
+        coremap[ix].vaddr_base = 0;
         KASSERT(coremap[ix].state != CME_DIRTY);
         coremap[ix].use_bit = 0;
         spinlock_acquire(&stat_lock);
@@ -190,10 +193,6 @@ int find_free_page(void){
     for (i=0; i<(int)num_cm_entries; i++){
         if (cme_try_pin(i)){
             if (cme_get_state(i) == CME_FREE) {
-                spinlock_acquire(&stat_lock);
-                num_cm_free -= 1;
-                KASSERT(num_cm_free >= 0);
-                spinlock_release(&stat_lock);
                 return i;
             }
             else
