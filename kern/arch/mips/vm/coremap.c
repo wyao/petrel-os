@@ -16,6 +16,7 @@
 #include <vfs.h>
 #include <bitmap.h>
 #include <cpu.h>
+#include <uio.h>
 
 #define MIN_USER_CM_PAGES 10
 
@@ -378,6 +379,10 @@ void swapfile_init(void){
         panic("swapfile_init: could not create disk map lock");
 }
 
+/*
+ * Uses the bitmap disk_map to find and return an available index, marking it used
+ * Panics in case of swap space being filled
+ */
 unsigned swapfile_reserve_index(void){
     KASSERT(swapfile != NULL);
     KASSERT(disk_map != NULL);
@@ -393,6 +398,10 @@ unsigned swapfile_reserve_index(void){
     return index;
 }
 
+/*
+ * Marks the given index of the disk map freed - index must have been previously obtained
+ * through the use of swapfile_reserve_index
+ */
 void swapfile_free_index(unsigned index){
     KASSERT(swapfile != NULL);
     KASSERT(disk_map != NULL);
@@ -406,7 +415,59 @@ void swapfile_free_index(unsigned index){
     lock_release(disk_map_lock);
 }
 
-// SHOULD ONLY BE CALLED WHEN THE LOCKS FOR BOTH ADDRSPACES ARE HELD
+/*
+ * Writes a page of physical memory to disk offset specified in coremap
+ * evict_page should only be called after successful return of this function
+ */
+int swapout(paddr_t ppn){
+    KASSERT(PADDR_IS_VALID(ppn));
+
+    int i = PADDR_TO_COREMAP(ppn);
+    KASSERT(coremap[i].state == CME_CLEAN);
+    KASSERT(coremap[i].disk_offset != -1);
+    
+    return write_page(ppn,coremap[i].disk_offset);
+}
+
+/*
+ * Reads a page of physical memory from the disk offset specified in the 
+ * thread's page table to the given physical address. 
+ * Upon success of read, updates the core map and page table.
+ * Should be called after successful completion of evict_page
+ */
+int swapin(struct thread *t, vaddr_t vpn, paddr_t dest){
+    int idx, ret;
+    unsigned offset;
+
+    KASSERT(t != NULL);
+    KASSERT(t->t_addrspace != NULL);
+
+    struct pt_ent *pte = get_pt_entry(t->t_addrspace,vpn);
+    KASSERT(pte != NULL && pte_get_exists(pte));
+    KASSERT(!pte_get_present(pte));
+
+    offset = pte_get_location(pte);
+    ret = read_page(dest,offset);
+
+    if (!ret){
+        idx = PADDR_TO_COREMAP(dest);
+        coremap[idx].disk_offset = offset;
+        coremap[idx].vaddr_base = vpn;
+        coremap[idx].thread = t;
+
+        pte_set_present(pte,1);
+        pte_set_location(pte,dest);
+    }
+
+    return ret;
+}
+
+/*
+ * Updates page table to have entry marked as absent and its location
+ * set to the offset on disk where it can be found.
+ *
+ * SHOULD ONLY BE CALLED WHEN THE LOCKS FOR BOTH ADDRSPACES ARE HELD
+ */
 void evict_page(paddr_t ppn){
     KASSERT(PADDR_IS_VALID(ppn));
 
@@ -426,6 +487,29 @@ void evict_page(paddr_t ppn){
     //TODO: MUST CALL TLBSHOOTDOWN
 }
 
+int write_page(paddr_t ppn, unsigned offset){
+    KASSERT(PADDR_IS_VALID(ppn));
+    // TODO: Assert offset is not off disk
+
+    void *src = (void *)PADDR_TO_KVADDR(ppn);
+    struct iovec iov;
+    struct uio u;
+    uio_kinit(&iov, &u, src, PAGE_SIZE, offset*PAGE_SIZE, UIO_WRITE);
+
+    return VOP_WRITE(swapfile,&u);
+}
+
+int read_page(paddr_t ppn, unsigned offset){
+   KASSERT(PADDR_IS_VALID(ppn));
+    // TODO: Assert offset is not off disk
+
+    void *src = (void *)PADDR_TO_KVADDR(ppn);
+    struct iovec iov;
+    struct uio u;
+    uio_kinit(&iov, &u, src, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
+
+    return VOP_READ(swapfile,&u);
+}
 
 /*
  * TLB Shootdown handlers (MACHINE DEPENDENT)

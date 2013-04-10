@@ -29,6 +29,7 @@ void
 vm_bootstrap(void)
 {
 	coremap_bootstrap();
+	// swapfile_init();
 }
 
 int

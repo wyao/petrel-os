@@ -81,7 +81,7 @@ unsigned swapfile_reserve_index(void); // Called in mark_allocated()
 void swapfile_free_index(unsigned index); // Called in free_coremap_page()
 
 int swapout(paddr_t ppn);
-int swapin(struct thread *t, vaddr_t vpn);
+int swapin(struct thread *t, vaddr_t vpn, paddr_t dest);
 void evict_page(paddr_t ppn);
 int write_page(paddr_t ppn, unsigned offset);
 int read_page(paddr_t ppn, unsigned offset);
