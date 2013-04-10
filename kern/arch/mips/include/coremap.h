@@ -31,6 +31,10 @@ struct cm_entry{
 struct cv *written_to_disk;
 struct lock *cv_lock;
 
+struct vnode *swapfile;
+struct bitmap *disk_map;
+struct lock *disk_map_lock;
+
 /*
  * Page selection APIs
  */
@@ -67,5 +71,20 @@ void cme_set_use(int ix, unsigned use);
  */
 
 void coremap_bootstrap(void);
+
+/*
+ * Swap space functions
+ */
+
+void swapfile_init(void);
+unsigned swapfile_reserve_index(void); // Called in mark_allocated()
+void swapfile_free_index(unsigned index); // Called in free_coremap_page()
+
+int swapout(paddr_t ppn);
+int swapin(struct thread *t, vaddr_t vpn);
+void evict_page(paddr_t ppn);
+int write_page(paddr_t ppn, unsigned offset);
+int read_page(paddr_t ppn, unsigned offset);
+
 
 #endif /* _COREMAP_H_ */

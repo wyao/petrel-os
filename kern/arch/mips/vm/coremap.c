@@ -11,6 +11,12 @@
 #include <machine/coremap.h>
 #include <synch.h>
 
+#include <kern/fcntl.h>
+#include <vnode.h>
+#include <vfs.h>
+#include <bitmap.h>
+#include <cpu.h>
+
 #define MIN_USER_CM_PAGES 10
 
 // Local shared variables
@@ -55,6 +61,7 @@ static void mark_allocated(int ix, int iskern) {
     }
     else {
         coremap[ix].state = CME_DIRTY;
+        coremap[ix].disk_offset = swapfile_reserve_index();
         num_cm_user += 1;
     }
     KASSERT(num_cm_free+num_cm_user+num_cm_kernel == num_cm_entries);
@@ -165,7 +172,12 @@ void free_coremap_page(paddr_t pa, bool iskern) {
     else {
         KASSERT(coremap[ix].thread != NULL);
         coremap[ix].thread = NULL;
-        // TODO: clear swap space
+        
+        // Free swap space
+        KASSERT(coremap[ix].disk_offset != -1);
+        swapfile_free_index(coremap[ix].disk_offset);
+        coremap[ix].disk_offset = -1;
+
         KASSERT(coremap[ix].vaddr_base != 0);
         KASSERT(coremap[ix].state != CME_DIRTY);
         coremap[ix].use_bit = 0;
@@ -339,6 +351,83 @@ void coremap_bootstrap(void){
 
 
 /*
+ * Swap space helper functions
+ */
+void swapfile_init(void){
+    // Should not yet be initialized
+    KASSERT(swapfile == NULL);
+    KASSERT(disk_map == NULL);
+    KASSERT(disk_map_lock == NULL);
+
+    char *disk_path = NULL;
+    disk_path = kstrdup("lhd0raw:");
+    if (disk_path == NULL)
+        panic("swapfile_init: could not open disk");
+
+    int err = vfs_open(disk_path,O_RDWR,0,&swapfile);
+    if (err)
+        panic("swapfile_init: could not open disk");
+
+    // TODO: 1200 is an approximation of 5MB/4KB, which is max number of pages we can have in swap
+    disk_map = bitmap_create(1200);
+    if (disk_map == NULL)
+        panic("swapfile_init: could not create disk map");
+
+    disk_map_lock = lock_create("disk map lock");
+    if (disk_map_lock == NULL)
+        panic("swapfile_init: could not create disk map lock");
+}
+
+unsigned swapfile_reserve_index(void){
+    KASSERT(swapfile != NULL);
+    KASSERT(disk_map != NULL);
+    KASSERT(disk_map_lock != NULL);
+
+    lock_acquire(disk_map_lock);
+
+    unsigned index;
+    if (bitmap_alloc(disk_map,&index))
+        panic("swapfile_reserve_index: disk out of space");
+
+    lock_release(disk_map_lock);
+    return index;
+}
+
+void swapfile_free_index(unsigned index){
+    KASSERT(swapfile != NULL);
+    KASSERT(disk_map != NULL);
+    KASSERT(disk_map_lock != NULL);
+
+    lock_acquire(disk_map_lock);
+
+    KASSERT(bitmap_isset(disk_map,index));
+    bitmap_unmark(disk_map,index);
+
+    lock_release(disk_map_lock);
+}
+
+// SHOULD ONLY BE CALLED WHEN THE LOCKS FOR BOTH ADDRSPACES ARE HELD
+void evict_page(paddr_t ppn){
+    KASSERT(PADDR_IS_VALID(ppn));
+
+    int i = PADDR_TO_COREMAP(ppn);
+    KASSERT(coremap[i].state == CME_CLEAN);
+    KASSERT(coremap[i].disk_offset != -1);
+    KASSERT(coremap[i].thread != NULL);
+
+    struct addrspace *as = coremap[i].thread->t_addrspace;
+    KASSERT(as != NULL);
+
+    struct pt_ent *pte = get_pt_entry(as,coremap[i].vaddr_base<<12);
+    KASSERT(pte != NULL);
+
+    pte_set_present(pte,0);
+    pte_set_location(pte,coremap[i].disk_offset);
+    //TODO: MUST CALL TLBSHOOTDOWN
+}
+
+
+/*
  * TLB Shootdown handlers (MACHINE DEPENDENT)
  * Interrupts are disabled with spl to ensure that TLB wipes are atomic
  * (This may only be important for shootdown_all...)
@@ -367,7 +456,7 @@ void vm_tlbshootdown(const struct tlbshootdown *ts){
     if (cme_get_state(ix) == CME_FREE)
         goto done;
 
-    uint32_t vpn = (uint32_t)cme_get_vaddr(ix);
+    uint32_t vpn = (uint32_t)cme_get_vaddr(ix) & TLBHI_VPAGE;
     int ret = tlb_probe(vpn,0); // ppn is not used by function
 
     if (ret >= 0) // tlb_probe returns negative value on failure or index on success
@@ -384,14 +473,14 @@ void vm_tlbshootdown(const struct tlbshootdown *ts){
  * Sets up tlbshootdown struct and permforms a shootdown synchronized by the semaphore
  * Handles allocation and destruction of the semaphore
  */
-void vm_tlbshootdown_wait(uint32_t ppn){
+void ipi_tlbshootdown_wait(struct cpu *target, uint32_t ppn){
     struct tlbshootdown ts;
     struct semaphore *s = sem_create("wait on",0);
 
     ts.done_handling = s;
     ts.ppn = ppn;
 
-    vm_tlbshootdown(&ts);
+    ipi_tlbshootdown(target,&ts);
     P(s); // Only V-ed upon completion of shootdown
 
     sem_destroy(s);
