@@ -50,7 +50,6 @@
 #include <version.h>
 #include "autoconf.h"  // for pseudoconfig
 
-
 /*
  * These two pieces of data are maintained by the makefiles and build system.
  * buildconfig is the name of the config file the kernel was configured with.
@@ -127,7 +126,7 @@ boot(void)
 
 	/* Default bootfs - but ignore failure, in case emu0 doesn't exist */
 	vfs_setbootfs("emu0");
-
+	swapfile_init();
 
 	/*
 	 * Make sure various things aren't screwed up.
