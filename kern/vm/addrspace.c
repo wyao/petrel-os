@@ -202,7 +202,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	for (i=0; i<PAGE_ENTRIES; i++){
 		if (old->page_table[i] != NULL){
-			new->page_table[i] = kmalloc(PAGE_SIZE*sizeof(struct pt_ent));
+			new->page_table[i] = kmalloc(PAGE_SIZE);
 			// For each page table entry
 			for (j=0; j<PAGE_ENTRIES; j++){
 				curr_old = &old->page_table[i][j];
@@ -264,7 +264,7 @@ as_destroy(struct addrspace *as)
 	// Free the recorded regions
 	num_regions = array_num(as->regions);
 	i = num_regions - 1;
-	while (1){
+	while (num_regions > 0){
 		ptr = array_get(as->regions, i);
 		kfree(ptr);
 		array_remove(as->regions, i);
