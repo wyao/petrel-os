@@ -204,6 +204,11 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		// First time accessing page
 		paddr_t new = alloc_one_page(curthread,faultaddress);
 
+		if (new == 0) {
+			lock_release(as->pt_lock);
+			return ENOMEM;
+		}
+
 		KASSERT(PADDR_IS_VALID(new));
 
 		bzero((void *)PADDR_TO_KVADDR(new), PAGE_SIZE);
