@@ -192,14 +192,39 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	return 0;
 
 	#else
-	(void)old;
-	(void)ret;
-
-	// Copy over old page table
-	int i,j;
+	int i,j, errno;
+	unsigned n, c;
 	struct pt_ent *curr_old, *curr_new;
-	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
+	struct region *old_region, *new_region;
 
+	new->heap_start = old->heap_start;
+	new->heap_end = old->heap_end;
+
+	// Copy region
+	n = array_num(old->regions);
+	for (c=0; c<n; c++) {
+		old_region = array_get(old->regions, c);
+		new_region = kmalloc(sizeof(struct region));
+		if (old_region == NULL || new_region == NULL) {
+			// TODO cleanup
+			return 3; //ENOMEM
+		}
+
+		new_region->base = old_region->base;
+		new_region->sz = old_region->sz;
+		new_region->readable = old_region->readable;
+		new_region->writeable = old_region->writeable;
+		new_region->executable = old_region->executable;
+
+		errno = array_add(new->regions, new_region, NULL);
+		if (errno) {
+			// TODO cleanup
+			return errno;
+		}
+	}
+
+	// Copy page table
+	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
 	for (i=0; i<PAGE_ENTRIES; i++){
 		if (old->page_table[i] != NULL){
 			new->page_table[i] = kmalloc(PAGE_SIZE);
