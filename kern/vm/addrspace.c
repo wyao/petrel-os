@@ -536,9 +536,15 @@ void pt_destroy(struct pt_ent **pt){
 		if (pt[i] != NULL) {
 			// FREE CM entry
 			for (j=0; j<PAGE_ENTRIES; j++) {
-				if (&pt[i][j] != NULL) { //TODO is this line right?
+				if (pte_get_exists(&pt[i][j])) {
 					pa = pte_get_location(&pt[i][j]) << 12;
-					free_coremap_page(pa, false /* iskern */);
+					if (pte_get_present(&pt[i][j])) {
+						if (cme_try_pin(cm_get_index(pa)))
+							free_coremap_page(pa, false /* iskern */);
+					}
+					else {
+						// Mark disk offset as available
+					}
 				}
 			}
 			kfree(pt[i]);
