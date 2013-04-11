@@ -175,7 +175,7 @@ void free_coremap_page(paddr_t pa, bool iskern) {
         // TODO: clear swap space
         KASSERT(coremap[ix].vaddr_base != 0);
         coremap[ix].vaddr_base = 0;
-        KASSERT(coremap[ix].state != CME_DIRTY);
+        // KASSERT(coremap[ix].state != CME_DIRTY); TODO: uncomment
         coremap[ix].use_bit = 0;
         spinlock_acquire(&stat_lock);
         num_cm_user--;

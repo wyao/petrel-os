@@ -129,9 +129,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	#else /* ========== START OF START VM ========== */
 
 	struct addrspace *as;
-	uint32_t ehi, elo, pa, num_regions, i;
-	int tlbindex, permissions, ret;
-	struct region *region;
+	uint32_t ehi, elo, pa;
+	int tlbindex, ret;
+	int permissions = VM_READ + VM_WRITE;
 	bool valid = false;
 
 	faultaddress &= PAGE_FRAME; // Page align
@@ -145,26 +145,19 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if (faultaddress == 0) {
 		return EFAULT;
 	}
-	if (faultaddress >= as->heap_start && faultaddress < as->heap_end) {
+	if (faultaddress >= as->heap_start && faultaddress <= as->heap_end) {
 		valid = true; // In heap
 	}
 	else if (faultaddress >= USERSTACK - PAGE_SIZE * STACK_PAGES) {
 		valid = true; // In stack or kernel memory
 	}
-	else { // Check regions
-		num_regions = array_num(as->regions);
-		for (i=0; i<num_regions; i++) {
-			region = array_get(as->regions, i);
-			if (faultaddress >= region->base &&
-				faultaddress <= (region->base + region->sz) ){
-				valid = true;
-				break;
-			}
-		}
+	else {
+		permissions = as_get_permissions(as,faultaddress);
+		valid = permissions >= 0;
 	}
-	// if (!valid) { TODO: Fix this code
-	// 	return EFAULT;
-	// }
+	if (!valid) {
+		return EFAULT;
+	}
 
 	struct pt_ent *pte = get_pt_entry(as,faultaddress);
 
@@ -212,14 +205,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		KASSERT(PADDR_IS_VALID(new));
 
 		bzero((void *)PADDR_TO_KVADDR(new), PAGE_SIZE);
-
-		permissions = 7;//as_get_permissions(as,faultaddress);
-		
-		// Virtual address did not fall within a defined region
-		if (permissions < 0){
-			lock_release(as->pt_lock);
-			return EFAULT;
-		}
 		
 		ret = pt_insert(as,faultaddress,new>>12,permissions); // Should permissions be RW?
 		if (ret) {
