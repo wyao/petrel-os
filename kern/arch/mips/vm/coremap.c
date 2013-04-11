@@ -196,13 +196,9 @@ void free_kpages(vaddr_t va) {
 int find_free_page(void){
     int i;
     for (i=0; i<(int)num_cm_entries; i++){
-        if (cme_try_pin(i)){
-            if (cme_get_state(i) == CME_FREE) {
-                KASSERT(coremap[i].busy_bit == 1);
+        if (cme_get_state(i) == CME_FREE) {
+            if (cme_try_pin(i))
                 return i;
-            }
-            else
-                cme_set_busy(i,0);
         }
     }
     return -1;
