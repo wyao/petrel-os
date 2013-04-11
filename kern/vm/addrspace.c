@@ -548,9 +548,13 @@ void pt_destroy(struct pt_ent **pt){
 					if (pte_get_present(&pt[i][j])) {
 						if (cme_try_pin(cm_get_index(pa)))
 							free_coremap_page(pa, false /* iskern */);
+						else {
+							KASSERT(0); // Can't happen
+						}
 					}
 					else {
 						// Mark disk offset as available
+						KASSERT(0); // Can't happen without swap
 					}
 				}
 			}
