@@ -50,9 +50,6 @@
 #define PT_SECONDARY_INDEX(va) (int)((va >> 12) & 0x3FF)
 #define ADDRESS_OFFSET(addr) (int)(addr & 0xFFF)
 
-/* under dumbvm, always have 48k of user stack */
-#define DUMBVM_STACKPAGES    22//12
-
 #if USE_DUMBVM
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;  // THIS IS IN BOTH VM.C AND HERE
 

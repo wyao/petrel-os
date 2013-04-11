@@ -19,9 +19,6 @@
  * assignment, this file is not included in your kernel!
  */
 
-#define DUMBVM_STACKPAGES    22//12
-#define STACK_PAGES          20
-
 /*
  * Wrap rma_stealmem in a spinlock.
  */
