@@ -76,6 +76,9 @@ static void mark_allocated(int ix, int iskern) {
  * it is possible for num_cm_user to be less than MIN_USER_CM_PAGES, but
  * this should be fine if MIN_USER_CM_PAGES is set large enough. This
  * decision was made to keep stat_lock as granular as possible.
+ *
+ * Leaves it up to vm_fault() (for user) and alloc_kpages() (for kernel)
+ * to unpin page.
  */
 paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
     int ix, iskern;
@@ -104,6 +107,8 @@ paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
     }
 
     // ix should be a valid page index at this point
+    KASSERT(coremap[ix].state == CME_FREE);
+    KASSERT(coremap[ix].busy_bit == 1);
     mark_allocated(ix, iskern);
 
     // If not kernel, update thread and vaddr_base
@@ -112,7 +117,6 @@ paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
         coremap[ix].thread = thread;
         coremap[ix].vaddr_base = va >> 12;
     }
-
     return COREMAP_TO_PADDR(ix);
 }
 
@@ -129,6 +133,7 @@ vaddr_t alloc_kpages(int npages) {
         kprintf("alloc_kpages: allocation failed\n");
         return (vaddr_t) NULL;
     }
+    cme_set_busy(PADDR_TO_COREMAP(pa), 0);
     return PADDR_TO_KVADDR(pa);
 }
 
@@ -193,6 +198,7 @@ int find_free_page(void){
     for (i=0; i<(int)num_cm_entries; i++){
         if (cme_try_pin(i)){
             if (cme_get_state(i) == CME_FREE) {
+                KASSERT(coremap[i].busy_bit == 1);
                 return i;
             }
             else
@@ -249,7 +255,10 @@ void cme_set_state(int ix, unsigned state){
 
 /* core map entry pinning */
 unsigned cme_get_busy(int ix){
-    return (unsigned)coremap[ix].busy_bit;
+    if (coremap[ix].busy_bit == 0)
+        return 0;
+    else
+        return 1;
 }
 void cme_set_busy(int ix, unsigned busy){
     coremap[ix].busy_bit = (busy > 0);
@@ -257,13 +266,16 @@ void cme_set_busy(int ix, unsigned busy){
 // Returns 1 on success (cme[ix] was not busy) and 0 on failure
 unsigned cme_try_pin(int ix){
     spinlock_acquire(&busy_lock);
+    // If busy
+    if(cme_get_busy(ix)) {
+        spinlock_release(&busy_lock);
+        return 0;
 
-    unsigned ret = cme_get_busy(ix);
-    if (!ret)
-        cme_set_busy(ix,1);
-
+    }
+    // If not busy, pin it!
+    cme_set_busy(ix,1);
     spinlock_release(&busy_lock);
-    return ~ret;
+    return 1;
 }
 
 unsigned cme_get_use(int ix){
