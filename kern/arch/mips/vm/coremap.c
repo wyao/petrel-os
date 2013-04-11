@@ -41,7 +41,7 @@ static int reached_kpage_limit(void){
 
 static void mark_allocated(int ix, int iskern) {
     // Sanity check
-    KASSERT(coremap[ix].thread == NULL);
+    KASSERT(coremap[ix].as == NULL);
     KASSERT(coremap[ix].disk_offset == -1);
     KASSERT(coremap[ix].vaddr_base == 0);
     KASSERT(coremap[ix].state == CME_FREE);
@@ -80,12 +80,12 @@ static void mark_allocated(int ix, int iskern) {
  * Leaves it up to vm_fault() (for user) and alloc_kpages() (for kernel)
  * to unpin page.
  */
-paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
+paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     int ix, iskern;
 
     KASSERT(num_cm_entries != 0);
 
-    iskern = (thread == NULL);
+    iskern = (as == NULL);
 
     // check there we leave enough pages for user
     if (iskern && reached_kpage_limit()) {
@@ -111,10 +111,10 @@ paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
     KASSERT(coremap[ix].busy_bit == 1);
     mark_allocated(ix, iskern);
 
-    // If not kernel, update thread and vaddr_base
+    // If not kernel, update as and vaddr_base
     if (!iskern) {
         KASSERT(va != 0);
-        coremap[ix].thread = thread;
+        coremap[ix].as = as;
         coremap[ix].vaddr_base = va >> 12;
     }
     return COREMAP_TO_PADDR(ix);
@@ -161,7 +161,7 @@ void free_coremap_page(paddr_t pa, bool iskern) {
     // TODO: Flush TLB
 
     if (iskern) {
-        KASSERT(coremap[ix].thread == NULL);
+        KASSERT(coremap[ix].as == NULL);
         KASSERT(coremap[ix].disk_offset == -1);
         KASSERT(coremap[ix].vaddr_base == 0);
         KASSERT(coremap[ix].state == CME_FIXED);
@@ -170,8 +170,8 @@ void free_coremap_page(paddr_t pa, bool iskern) {
         num_cm_kernel--;
     }
     else {
-        KASSERT(coremap[ix].thread != NULL);
-        coremap[ix].thread = NULL;
+        KASSERT(coremap[ix].as != NULL);
+        coremap[ix].as = NULL;
         // TODO: clear swap space
         KASSERT(coremap[ix].vaddr_base != 0);
         coremap[ix].vaddr_base = 0;
@@ -334,7 +334,7 @@ void coremap_bootstrap(void){
 
     // Initialize coremap entries; basically zero everything
     for (i=0; i<(int)num_cm_entries; i++) {
-        coremap[i].thread = NULL;
+        coremap[i].as = NULL;
         coremap[i].disk_offset = -1;
         coremap[i].vaddr_base = 0;
         coremap[i].state = CME_FREE;

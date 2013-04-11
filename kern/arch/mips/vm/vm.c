@@ -202,7 +202,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	lock_acquire(as->pt_lock);
 	if (pte == NULL || !pte_get_exists(pte)) {
 		// First time accessing page
-		paddr_t new = alloc_one_page(curthread,faultaddress);
+		paddr_t new = alloc_one_page(curthread->t_addrspace,faultaddress);
 
 		if (new == 0) {
 			lock_release(as->pt_lock);

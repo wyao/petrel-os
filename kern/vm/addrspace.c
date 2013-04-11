@@ -236,7 +236,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				if (pte_get_exists(curr_old)){
 					// Page is in memory
 					if (pte_get_present(curr_old)){
-						paddr_t base_new = alloc_one_page(curthread,PT_TO_VADDR(i,j));
+						paddr_t base_new = alloc_one_page(*ret,PT_TO_VADDR(i,j));
 						paddr_t base_old = (pte_get_location(curr_old) << 12);
 						// CONVERT TO KERNEL PTR AND MEMCPY
 						void *src = (void *)PADDR_TO_KVADDR(base_old);
