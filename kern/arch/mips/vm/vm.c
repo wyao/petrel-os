@@ -130,7 +130,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	struct addrspace *as;
 	uint32_t ehi, elo, pa;
-	int tlbindex, ret;
+	int tlbindex, ret, spl;
 	int permissions = VM_READ + VM_WRITE;
 	bool valid = false;
 
@@ -176,6 +176,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		elo = (pa & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
 		ehi = faultaddress & TLBHI_VPAGE;
+
+		spl = splhigh();
+
 		tlbindex = tlb_probe(faultaddress,0);
 		if (tlbindex < -1) {
 			tlb_random(ehi, elo);
@@ -183,6 +186,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		else {
 			tlb_write(ehi, elo, tlbindex);
 		}
+
+		splx(spl);
+
 		return 0;
 
 	    case VM_FAULT_READ:
@@ -223,7 +229,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			// TODO prob and actually write to random index
 			ehi = faultaddress & TLBHI_VPAGE;
 			elo = (pa & TLBLO_PPAGE) | TLBLO_VALID;
+
+			spl = splhigh();
 			tlb_random(ehi, elo);
+			splx(spl);
 		}
 		else {
 			// Page is in swap space (TODO)
