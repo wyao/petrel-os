@@ -71,6 +71,7 @@ pid_t sys_getpid(void);
 pid_t sys_waitpid(pid_t pid, int *status, int options, int *err);
 pid_t sys_fork(struct trapframe *tf, int *err);
 int sys_execv(userptr_t progname, userptr_t args);
+int sys_sbrk(int amount, int *err);
 
 #endif /* _SYSCALL_H_ */
 

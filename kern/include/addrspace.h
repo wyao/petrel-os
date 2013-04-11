@@ -33,7 +33,8 @@
 /*
  * Address space structure and operations.
  */
-
+#define DUMBVM_STACKPAGES    20
+#define STACK_PAGES          20
 
 #include <vm.h>
 #include "opt-dumbvm.h"
