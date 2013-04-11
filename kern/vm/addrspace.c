@@ -236,18 +236,25 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				if (pte_get_exists(curr_old)){
 					// Page is in memory
 					if (pte_get_present(curr_old)){
-						paddr_t base_new = alloc_one_page(*ret,PT_TO_VADDR(i,j));
 						paddr_t base_old = (pte_get_location(curr_old) << 12);
-						// CONVERT TO KERNEL PTR AND MEMCPY
-						void *src = (void *)PADDR_TO_KVADDR(base_old);
-						void *dest = (void *)PADDR_TO_KVADDR(base_new);
-						memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
+						if (cme_try_pin(cm_get_index(base_old))) {
+							paddr_t base_new = alloc_one_page(new,PT_TO_VADDR(i,j));
+							// CONVERT TO KERNEL PTR AND MEMCPY
+							void *src = (void *)PADDR_TO_KVADDR(base_old);
+							void *dest = (void *)PADDR_TO_KVADDR(base_new);
+							memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
 
-						// Set new page table entry to a valid mapping to new location with same permissions
-						pt_update(new,PT_TO_VADDR(i,j),base_new>>12,0,1);
+							// Set new page table entry to a valid mapping to new location with same permissions
+							int perm = pte_get_permissions(&old->page_table[i][j]);
+							pt_update(new,PT_TO_VADDR(i,j),base_new>>12,perm,1);
 
-						// Unbusy the coremap entry for the new page
-						cme_set_busy(cm_get_index(base_new),0);
+							// Unbusy the coremap entry for both new and old page
+							cme_set_busy(cm_get_index(base_old),0);
+							cme_set_busy(cm_get_index(base_new),0);
+						}
+						else {
+							KASSERT(false); // Shouldn't happen until eviction
+						}
 					}
 					// Page is in swap space (TODO - for now treats it as if it didn't exist)
 					else{
@@ -628,8 +635,7 @@ int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, unsign
 	pte_set_location(pte,ppn);
 	pte_set_present(pte,is_present);
 	pte_set_exists(pte,1);
-	int newperms = pte_get_permissions(pte)&(~permissions);
-	pte_set_permissions(pte,newperms);
+	pte_set_permissions(pte,permissions);
 
 	return 0;
 }
