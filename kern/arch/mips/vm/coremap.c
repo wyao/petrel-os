@@ -455,14 +455,13 @@ int swapout(paddr_t ppn){
  * Upon success of read, updates the core map and page table.
  * Should be called after successful completion of evict_page
  */
-int swapin(struct thread *t, vaddr_t vpn, paddr_t dest){
+int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest){
     int idx, ret;
     unsigned offset;
 
-    KASSERT(t != NULL);
-    KASSERT(t->t_addrspace != NULL);
+    KASSERT(as != NULL);
 
-    struct pt_ent *pte = get_pt_entry(t->t_addrspace,vpn);
+    struct pt_ent *pte = get_pt_entry(as,vpn);
     KASSERT(pte != NULL && pte_get_exists(pte));
     KASSERT(!pte_get_present(pte));
 
@@ -473,7 +472,7 @@ int swapin(struct thread *t, vaddr_t vpn, paddr_t dest){
         idx = PADDR_TO_COREMAP(dest);
         coremap[idx].disk_offset = offset;
         coremap[idx].vaddr_base = vpn;
-        coremap[idx].thread = t;
+        coremap[idx].as = as;
 
         pte_set_present(pte,1);
         pte_set_location(pte,dest);
@@ -494,12 +493,9 @@ void evict_page(paddr_t ppn){
     int i = PADDR_TO_COREMAP(ppn);
     KASSERT(coremap[i].state == CME_CLEAN);
     KASSERT(coremap[i].disk_offset != -1);
-    KASSERT(coremap[i].thread != NULL);
+    KASSERT(coremap[i].as != NULL);
 
-    struct addrspace *as = coremap[i].thread->t_addrspace;
-    KASSERT(as != NULL);
-
-    struct pt_ent *pte = get_pt_entry(as,coremap[i].vaddr_base<<12);
+    struct pt_ent *pte = get_pt_entry(coremap[i].as,coremap[i].vaddr_base<<12);
     KASSERT(pte != NULL);
 
     pte_set_present(pte,0);
