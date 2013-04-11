@@ -180,13 +180,14 @@ void free_coremap_page(paddr_t pa, bool iskern) {
         spinlock_acquire(&stat_lock);
         num_cm_user--;
     }
+    // Have to zero this page for some reason
+    bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+
     cme_set_state(ix, CME_FREE);
     num_cm_free++;
     spinlock_release(&stat_lock);
 
-    // Have to zero this page for some reason (and then unpin)
-    bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
-    cme_set_busy(ix, 0);
+    cme_set_busy(ix, 0); // Make available
 }
 
 void free_kpages(vaddr_t va) {
