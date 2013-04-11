@@ -19,7 +19,7 @@ uint32_t base; // Number of pages taken up by coremap
 
 /* Core map structures and functions */
 struct cm_entry{
-    struct thread *thread;
+    struct addrspace *as;
     int disk_offset;  // Stores the disk offset when page in memory
     vaddr_t vaddr_base:20;
     int junk:8;
@@ -38,7 +38,7 @@ struct lock *disk_map_lock;
 /*
  * Page selection APIs
  */
-paddr_t alloc_one_page(struct thread *thread, vaddr_t va);
+paddr_t alloc_one_page(struct addrspace *as, vaddr_t va);
 vaddr_t alloc_kpages(int npages);
 void free_coremap_page(paddr_t pa, bool iskern);
 void free_kpages(vaddr_t va);

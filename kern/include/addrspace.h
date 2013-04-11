@@ -40,7 +40,7 @@
 #include <array.h>
 
 #define USE_DUMBVM 0
-#define PT_TO_VADDR(i,j) (vaddr_t)((i << 24)+(j << 12))
+#define PT_TO_VADDR(i,j) (vaddr_t)((i << 22)+(j << 12))
 
 #define VM_READ 1
 #define VM_WRITE 2

@@ -125,6 +125,7 @@ as_create(void)
 	if (as->regions == NULL)
 		goto err2;
 	as->heap_start = (vaddr_t)0;
+	as->heap_end = (vaddr_t)0;
 	as->is_loading = false;
 
 	return as;
@@ -191,37 +192,69 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	return 0;
 
 	#else
-	(void)old;
-	(void)ret;
-
-	// Copy over old page table
-	int i,j;
+	int i,j, errno;
+	unsigned n, c;
 	struct pt_ent *curr_old, *curr_new;
-	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
+	struct region *old_region, *new_region;
 
-	for (i=0; i<PAGE_SIZE; i++){
+	new->heap_start = old->heap_start;
+	new->heap_end = old->heap_end;
+
+	// Copy region
+	n = array_num(old->regions);
+	for (c=0; c<n; c++) {
+		old_region = array_get(old->regions, c);
+		new_region = kmalloc(sizeof(struct region));
+		if (old_region == NULL || new_region == NULL) {
+			// TODO cleanup
+			return 3; //ENOMEM
+		}
+
+		new_region->base = old_region->base;
+		new_region->sz = old_region->sz;
+		new_region->readable = old_region->readable;
+		new_region->writeable = old_region->writeable;
+		new_region->executable = old_region->executable;
+
+		errno = array_add(new->regions, new_region, NULL);
+		if (errno) {
+			// TODO cleanup
+			return errno;
+		}
+	}
+
+	// Copy page table
+	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
+	for (i=0; i<PAGE_ENTRIES; i++){
 		if (old->page_table[i] != NULL){
-			new->page_table[i] = kmalloc(PAGE_SIZE*sizeof(struct pt_ent));
+			new->page_table[i] = kmalloc(PAGE_SIZE);
 			// For each page table entry
-			for (j=0; j<PAGE_SIZE; j++){
+			for (j=0; j<PAGE_ENTRIES; j++){
 				curr_old = &old->page_table[i][j];
 				curr_new = &new->page_table[i][j];
 				// If the entry exists (ie, page is in memory or swap space)
 				if (pte_get_exists(curr_old)){
 					// Page is in memory
 					if (pte_get_present(curr_old)){
-						paddr_t base_new = alloc_one_page(curthread,PT_TO_VADDR(i,j));
 						paddr_t base_old = (pte_get_location(curr_old) << 12);
-						// CONVERT TO KERNEL PTR AND MEMCPY
-						void *src = (void *)PADDR_TO_KVADDR(base_old);
-						void *dest = (void *)PADDR_TO_KVADDR(base_new);
-						memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
+						if (cme_try_pin(cm_get_index(base_old))) {
+							paddr_t base_new = alloc_one_page(new,PT_TO_VADDR(i,j));
+							// CONVERT TO KERNEL PTR AND MEMCPY
+							void *src = (void *)PADDR_TO_KVADDR(base_old);
+							void *dest = (void *)PADDR_TO_KVADDR(base_new);
+							memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
 
-						// Set new page table entry to a valid mapping to new location with same permissions
-						pt_update(new,PT_TO_VADDR(i,j),base_new>>12,0,1);
+							// Set new page table entry to a valid mapping to new location with same permissions
+							int perm = pte_get_permissions(&old->page_table[i][j]);
+							pt_update(new,PT_TO_VADDR(i,j),base_new>>12,perm,1);
 
-						// Unbusy the coremap entry for the new page
-						cme_set_busy(cm_get_index(base_new),0);
+							// Unbusy the coremap entry for both new and old page
+							cme_set_busy(cm_get_index(base_old),0);
+							cme_set_busy(cm_get_index(base_new),0);
+						}
+						else {
+							KASSERT(false); // Shouldn't happen until eviction
+						}
 					}
 					// Page is in swap space (TODO - for now treats it as if it didn't exist)
 					else{
@@ -262,9 +295,15 @@ as_destroy(struct addrspace *as)
 
 	// Free the recorded regions
 	num_regions = array_num(as->regions);
-	for (i=0; i<num_regions; i++) {
+	i = num_regions - 1;
+	while (num_regions > 0){
 		ptr = array_get(as->regions, i);
 		kfree(ptr);
+		array_remove(as->regions, i);
+
+		if (i == 0)
+			break;
+		i--;
 	}
 	array_destroy(as->regions);
 
@@ -353,7 +392,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 
 	int errno;
 	struct region *region;
-
 	/* Align the region. First, the base... */
 	sz += vaddr & ~(vaddr_t)PAGE_FRAME; //TODO WHAT IS THIS??
 	vaddr &= PAGE_FRAME;
@@ -362,8 +400,10 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
 
 	// Update heap_start
-	if (as->heap_start < (vaddr + sz))
+	if (as->heap_start < (vaddr + sz)) {
 		as->heap_start = vaddr + sz;
+		as->heap_end = as->heap_start;
+	}
 
 	// Record region (to be used in vm_fault)
 	region = kmalloc(sizeof(struct region));
@@ -374,7 +414,6 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	region->readable = readable;
 	region->writeable = writeable;
 	region->executable = executable;
-
 	errno = array_add(as->regions, region, NULL);
 	if (errno)
 		return errno;
@@ -458,14 +497,14 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 }
 
 int as_get_permissions(struct addrspace *as, vaddr_t va){
-	int i;
+	unsigned i;
 	int permissions = 0;
 	struct region *r;
-	int len = array_num(as->regions);
+	unsigned len = array_num(as->regions);
 
 	for (i=0; i<len; i++){
 		r = array_get(as->regions,i);
-		if (va > r->base && va < (r->base + r->sz)){
+		if (va >= r->base && va < (r->base + r->sz)){
 			if (r->readable)
 				permissions += VM_READ;
 			if (r->writeable)
@@ -491,17 +530,36 @@ struct pt_ent **pt_create(void){
 	if (ret == NULL)
 		return NULL;
 
-	for (i=0; i<PAGE_SIZE/4; i++){
+	for (i=0; i<PAGE_ENTRIES; i++){
 		ret[i] = NULL;
 	}
 	return ret;
 }
 
 void pt_destroy(struct pt_ent **pt){
-	int i;
-	for (i=0; i<PAGE_SIZE; i++){
-		if (pt[i] != NULL)
+	int i, j;
+	paddr_t pa;
+	for (i=0; i<PAGE_ENTRIES; i++){
+		if (pt[i] != NULL) {
+			// FREE CM entry
+			for (j=0; j<PAGE_ENTRIES; j++) {
+				if (pte_get_exists(&pt[i][j])) {
+					pa = pte_get_location(&pt[i][j]) << 12;
+					if (pte_get_present(&pt[i][j])) {
+						if (cme_try_pin(cm_get_index(pa)))
+							free_coremap_page(pa, false /* iskern */);
+						else {
+							KASSERT(0); // Can't happen
+						}
+					}
+					else {
+						// Mark disk offset as available
+						KASSERT(0); // Can't happen without swap
+					}
+				}
+			}
 			kfree(pt[i]);
+		}
 	}
 	kfree(pt);
 }
@@ -544,7 +602,7 @@ int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
 		if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL)
 			return ENOMEM;
 
-		for (i=0; i<PAGE_SIZE/4; i++){
+		for (i=0; i<PAGE_ENTRIES; i++){
 			as->page_table[PT_PRIMARY_INDEX(va)][i].page_paddr_base = 0;
 			as->page_table[PT_PRIMARY_INDEX(va)][i].permissions = 0;
 			as->page_table[PT_PRIMARY_INDEX(va)][i].present = 0;
@@ -581,8 +639,7 @@ int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, unsign
 	pte_set_location(pte,ppn);
 	pte_set_present(pte,is_present);
 	pte_set_exists(pte,1);
-	int newperms = pte_get_permissions(pte)&(~permissions);
-	pte_set_permissions(pte,newperms);
+	pte_set_permissions(pte,permissions);
 
 	return 0;
 }

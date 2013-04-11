@@ -20,6 +20,7 @@
  */
 
 #define DUMBVM_STACKPAGES    22//12
+#define STACK_PAGES          20
 
 /*
  * Wrap rma_stealmem in a spinlock.
@@ -40,6 +41,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	int i;
 	uint32_t ehi, elo;
 	struct addrspace *as;
+	bool valid = false;
 	int spl;
 
 	faultaddress &= PAGE_FRAME;
@@ -124,12 +126,13 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	splx(spl);
 	return EFAULT;
 
-	#else
+	#else /* ========== START OF START VM ========== */
 
 	struct addrspace *as;
-	uint32_t ehi, elo;
-	int tlbindex, permissions, ret;
-	uint32_t pa;
+	uint32_t ehi, elo, pa;
+	int tlbindex, ret, spl;
+	int permissions = VM_READ + VM_WRITE;
+	bool valid = false;
 
 	faultaddress &= PAGE_FRAME; // Page align
 	KASSERT(faultaddress < MIPS_KSEG0);
@@ -138,7 +141,23 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	if (as == NULL)
 		return EFAULT;
 
-	// TODO: ensure that faultaddress falls within a region, heap, or stack
+	// Validate faultaddress
+	if (faultaddress == 0) {
+		return EFAULT;
+	}
+	if (faultaddress >= as->heap_start && faultaddress <= as->heap_end) {
+		valid = true; // In heap
+	}
+	else if (faultaddress >= USERSTACK - PAGE_SIZE * STACK_PAGES) {
+		valid = true; // In stack or kernel memory
+	}
+	else {
+		permissions = as_get_permissions(as,faultaddress);
+		valid = permissions >= 0;
+	}
+	if (!valid) {
+		return EFAULT;
+	}
 
 	struct pt_ent *pte = get_pt_entry(as,faultaddress);
 
@@ -157,6 +176,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 		elo = (pa & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
 		ehi = faultaddress & TLBHI_VPAGE;
+
+		spl = splhigh();
+
 		tlbindex = tlb_probe(faultaddress,0);
 		if (tlbindex < -1) {
 			tlb_random(ehi, elo);
@@ -164,6 +186,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		else {
 			tlb_write(ehi, elo, tlbindex);
 		}
+
+		splx(spl);
+
 		return 0;
 
 	    case VM_FAULT_READ:
@@ -176,19 +201,16 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	lock_acquire(as->pt_lock);
 	if (pte == NULL || !pte_get_exists(pte)) {
 		// First time accessing page
-		paddr_t new = alloc_one_page(curthread,faultaddress);
+		paddr_t new = alloc_one_page(curthread->t_addrspace,faultaddress);
+
+		if (new == 0) {
+			lock_release(as->pt_lock);
+			return ENOMEM;
+		}
 
 		KASSERT(PADDR_IS_VALID(new));
 
 		bzero((void *)PADDR_TO_KVADDR(new), PAGE_SIZE);
-
-		permissions = 7;//as_get_permissions(as,faultaddress);
-		
-		// Virtual address did not fall within a defined region
-		if (permissions < 0){
-			lock_release(as->pt_lock);
-			return EFAULT;
-		}
 		
 		ret = pt_insert(as,faultaddress,new>>12,permissions); // Should permissions be RW?
 		if (ret) {
@@ -207,7 +229,10 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			// TODO prob and actually write to random index
 			ehi = faultaddress & TLBHI_VPAGE;
 			elo = (pa & TLBLO_PPAGE) | TLBLO_VALID;
+
+			spl = splhigh();
 			tlb_random(ehi, elo);
+			splx(spl);
 		}
 		else {
 			// Page is in swap space (TODO)

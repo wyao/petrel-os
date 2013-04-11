@@ -48,7 +48,7 @@ static int reached_kpage_limit(void){
 
 static void mark_allocated(int ix, int iskern) {
     // Sanity check
-    KASSERT(coremap[ix].thread == NULL);
+    KASSERT(coremap[ix].as == NULL);
     KASSERT(coremap[ix].disk_offset == -1);
     KASSERT(coremap[ix].vaddr_base == 0);
     KASSERT(coremap[ix].state == CME_FREE);
@@ -56,6 +56,8 @@ static void mark_allocated(int ix, int iskern) {
     KASSERT(coremap[ix].use_bit == 0);
 
     spinlock_acquire(&stat_lock);
+    num_cm_free -= 1;
+    KASSERT(num_cm_free >= 0);
     if (iskern) {
         coremap[ix].state = CME_FIXED;
         num_cm_kernel += 1;
@@ -82,13 +84,16 @@ static void mark_allocated(int ix, int iskern) {
  * it is possible for num_cm_user to be less than MIN_USER_CM_PAGES, but
  * this should be fine if MIN_USER_CM_PAGES is set large enough. This
  * decision was made to keep stat_lock as granular as possible.
+ *
+ * Leaves it up to vm_fault() (for user) and alloc_kpages() (for kernel)
+ * to unpin page.
  */
-paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
+paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     int ix, iskern;
 
     KASSERT(num_cm_entries != 0);
 
-    iskern = (thread == NULL);
+    iskern = (as == NULL);
 
     // check there we leave enough pages for user
     if (iskern && reached_kpage_limit()) {
@@ -110,15 +115,16 @@ paddr_t alloc_one_page(struct thread *thread, vaddr_t va){
     }
 
     // ix should be a valid page index at this point
+    KASSERT(coremap[ix].state == CME_FREE);
+    KASSERT(coremap[ix].busy_bit == 1);
     mark_allocated(ix, iskern);
 
-    // If not kernel, update thread and vaddr_base
+    // If not kernel, update as and vaddr_base
     if (!iskern) {
         KASSERT(va != 0);
-        coremap[ix].thread = thread;
+        coremap[ix].as = as;
         coremap[ix].vaddr_base = va >> 12;
     }
-
     return COREMAP_TO_PADDR(ix);
 }
 
@@ -135,6 +141,7 @@ vaddr_t alloc_kpages(int npages) {
         kprintf("alloc_kpages: allocation failed\n");
         return (vaddr_t) NULL;
     }
+    cme_set_busy(PADDR_TO_COREMAP(pa), 0);
     return PADDR_TO_KVADDR(pa);
 }
 
@@ -162,7 +169,7 @@ void free_coremap_page(paddr_t pa, bool iskern) {
     // TODO: Flush TLB
 
     if (iskern) {
-        KASSERT(coremap[ix].thread == NULL);
+        KASSERT(coremap[ix].as == NULL);
         KASSERT(coremap[ix].disk_offset == -1);
         KASSERT(coremap[ix].vaddr_base == 0);
         KASSERT(coremap[ix].state == CME_FIXED);
@@ -171,23 +178,29 @@ void free_coremap_page(paddr_t pa, bool iskern) {
         num_cm_kernel--;
     }
     else {
-        KASSERT(coremap[ix].thread != NULL);
-        coremap[ix].thread = NULL;
-        
+        KASSERT(coremap[ix].as != NULL);
+        coremap[ix].as = NULL;
+
         // Free swap space
         KASSERT(coremap[ix].disk_offset != -1);
         swapfile_free_index(coremap[ix].disk_offset);
         coremap[ix].disk_offset = -1;
 
         KASSERT(coremap[ix].vaddr_base != 0);
-        KASSERT(coremap[ix].state != CME_DIRTY);
+        coremap[ix].vaddr_base = 0;
+        // KASSERT(coremap[ix].state != CME_DIRTY); TODO: uncomment
         coremap[ix].use_bit = 0;
         spinlock_acquire(&stat_lock);
         num_cm_user--;
     }
+    // Have to zero this page for some reason
+    bzero((void *)PADDR_TO_KVADDR(pa), PAGE_SIZE);
+
     cme_set_state(ix, CME_FREE);
     num_cm_free++;
     spinlock_release(&stat_lock);
+
+    cme_set_busy(ix, 0); // Make available
 }
 
 void free_kpages(vaddr_t va) {
@@ -201,16 +214,12 @@ void free_kpages(vaddr_t va) {
 int find_free_page(void){
     int i;
     for (i=0; i<(int)num_cm_entries; i++){
-        if (cme_try_pin(i)){
-            if (cme_get_state(i) == CME_FREE) {
-                spinlock_acquire(&stat_lock);
-                num_cm_free -= 1;
-                KASSERT(num_cm_free >= 0);
-                spinlock_release(&stat_lock);
-                return i;
+        if (cme_get_state(i) == CME_FREE) {
+            if (cme_try_pin(i)) {
+                if (cme_get_state(i) == CME_FREE)
+                    return i;
+                cme_set_busy(i, 0);
             }
-            else
-                cme_set_busy(i,0);
         }
     }
     return -1;
@@ -263,7 +272,10 @@ void cme_set_state(int ix, unsigned state){
 
 /* core map entry pinning */
 unsigned cme_get_busy(int ix){
-    return (unsigned)coremap[ix].busy_bit;
+    if (coremap[ix].busy_bit == 0)
+        return 0;
+    else
+        return 1;
 }
 void cme_set_busy(int ix, unsigned busy){
     coremap[ix].busy_bit = (busy > 0);
@@ -271,13 +283,16 @@ void cme_set_busy(int ix, unsigned busy){
 // Returns 1 on success (cme[ix] was not busy) and 0 on failure
 unsigned cme_try_pin(int ix){
     spinlock_acquire(&busy_lock);
+    // If busy
+    if(cme_get_busy(ix)) {
+        spinlock_release(&busy_lock);
+        return 0;
 
-    unsigned ret = cme_get_busy(ix);
-    if (!ret)
-        cme_set_busy(ix,1);
-
+    }
+    // If not busy, pin it!
+    cme_set_busy(ix,1);
     spinlock_release(&busy_lock);
-    return ~ret;
+    return 1;
 }
 
 unsigned cme_get_use(int ix){
@@ -336,7 +351,7 @@ void coremap_bootstrap(void){
 
     // Initialize coremap entries; basically zero everything
     for (i=0; i<(int)num_cm_entries; i++) {
-        coremap[i].thread = NULL;
+        coremap[i].as = NULL;
         coremap[i].disk_offset = -1;
         coremap[i].vaddr_base = 0;
         coremap[i].state = CME_FREE;
