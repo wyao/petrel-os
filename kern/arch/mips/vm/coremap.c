@@ -48,12 +48,13 @@ static int reached_kpage_limit(void){
 
 static void mark_allocated(int ix, int iskern) {
     // Sanity check
-    KASSERT(coremap[ix].as == NULL);
-    KASSERT(coremap[ix].disk_offset == -1);
-    KASSERT(coremap[ix].vaddr_base == 0);
     KASSERT(coremap[ix].state == CME_FREE);
     KASSERT(coremap[ix].busy_bit == 1);
-    KASSERT(coremap[ix].use_bit == 0);
+
+    coremap[ix].as = NULL;
+    coremap[ix].disk_offset = -1;
+    coremap[ix].vaddr_base = 0;
+    coremap[ix].use_bit = 0;
 
     spinlock_acquire(&stat_lock);
     num_cm_free -= 1;
