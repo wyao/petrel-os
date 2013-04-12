@@ -88,7 +88,8 @@ static void mark_allocated(int ix, int iskern) {
  * to unpin page.
  */
 paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
-    int ix, iskern;
+    int ix = -1;
+    int iskern;
 
     KASSERT(num_cm_entries != 0);
 
@@ -100,17 +101,32 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         return INVALID_PADDR;
     }
 
-    if (num_cm_free > 0) {
+    if (num_cm_free > 0)
         ix = find_free_page();
+    if (ix < 0) {
+        // Find a page to swap
+        ix = choose_evict_page();
+        KASSERT(ix != -1); // Shouldn't happen...ever...
+        if (cme_get_state(ix) != CME_FREE){
+            // To avoid deadlock, acquire AS locks in order of raw pointer value
+            // If we are evicting our own page, do nothing extra.
+            if ((int)coremap[ix].as < (int)as){
+                lock_release(as->pt_lock);
+                lock_acquire(coremap[ix].as->pt_lock);
+                lock_acquire(as->pt_lock);
+            }
+            if ((int)coremap[ix].as > (int)as)
+                lock_acquire(coremap[ix].as->pt_lock);
 
-        if (ix < 0){ // This should not happen
-            kprintf("alloc_one_page: inconsistent state\n");
-            return INVALID_PADDR;
+            // SHOOT DOWN ADDRESS ON ALL CPUS
+
+            if (cme_get_state(ix) == CME_DIRTY)
+                swapout(COREMAP_TO_PADDR(ix));
+            evict_page(COREMAP_TO_PADDR(ix));
+
+            if (coremap[ix].as != as)
+                lock_release(coremap[ix].as->pt_lock);
         }
-    }
-    else {
-        kprintf("alloc_one_page: currently does not support swapping\n");
-        return INVALID_PADDR;
     }
 
     // ix should be a valid page index at this point
@@ -124,7 +140,9 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         KASSERT(va != 0);
         coremap[ix].as = as;
         coremap[ix].vaddr_base = va >> 12;
-        coremap[ix].disk_offset = swapfile_reserve_index();
+        // We only want a enw offset if we are not swapping in
+        if (coremap[ix].disk_offset == -1)
+            coremap[ix].disk_offset = swapfile_reserve_index();
     }
     return COREMAP_TO_PADDR(ix);
 }
@@ -231,9 +249,7 @@ int find_free_page(void){
  */
 int choose_evict_page(void){
     while(1){
-        if (cme_get_state(clock_hand) == CME_CLEAN || 
-            cme_get_state(clock_hand) == CME_DIRTY){
-            
+        if (cme_get_state(clock_hand) != CME_FIXED){
             if (cme_try_pin(clock_hand)){
                 if (cme_get_use(clock_hand)){
                     cme_set_use(clock_hand,0);
@@ -263,6 +279,14 @@ int cme_get_vaddr(int ix){
 }
 void cme_set_vaddr(int ix, int vaddr){
     coremap[ix].vaddr_base = vaddr >> 12;
+}
+
+int cme_get_offset(int ix){
+    return coremap[ix].disk_offset;
+}
+
+void cme_set_offset(int ix, int offset){
+    coremap[ix].disk_offset = offset;
 }
 
 unsigned cme_get_state(int ix){
@@ -449,10 +473,13 @@ int swapout(paddr_t ppn){
     KASSERT(PADDR_IS_VALID(ppn));
 
     int i = PADDR_TO_COREMAP(ppn);
-    KASSERT(coremap[i].state == CME_CLEAN);
     KASSERT(coremap[i].disk_offset != -1);
+    KASSERT(coremap[i].state == CME_DIRTY);
     
-    return write_page(ppn,coremap[i].disk_offset);
+    int ret = write_page(ppn,coremap[i].disk_offset);
+    if (!ret)
+        cme_set_state(i,CME_CLEAN);
+    return ret;
 }
 
 /*
@@ -506,7 +533,7 @@ void evict_page(paddr_t ppn){
 
     pte_set_present(pte,0);
     pte_set_location(pte,coremap[i].disk_offset);
-    //TODO: MUST CALL TLBSHOOTDOWN
+    cme_set_state(i,CME_FREE);
 }
 
 int write_page(paddr_t ppn, unsigned offset){

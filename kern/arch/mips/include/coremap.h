@@ -54,6 +54,9 @@ int cm_get_index(paddr_t pa);
 int cme_get_vaddr(int ix);
 void cme_set_vaddr(int ix, int vaddr);
 
+int cme_get_offset(int ix);
+void cme_set_offset(int ix, int offset);
+
 unsigned cme_get_state(int ix);
 void cme_set_state(int ix, unsigned state);
 

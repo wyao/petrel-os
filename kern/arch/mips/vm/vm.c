@@ -215,6 +215,8 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			lock_release(as->pt_lock);
 			return ret;
 		}
+
+		// Give the coremap entry a new offset
 		cme_set_busy(cm_get_index(new),0);
 	}
 	else { // Page exists either in memory or in swap
@@ -233,7 +235,12 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			splx(spl);
 		}
 		else {
-			// Page is in swap space (TODO)
+			// Page is in swap space
+			paddr_t new = alloc_one_page(curthread->t_addrspace,faultaddress);
+			ret = swapin(as,faultaddress,new);
+
+			KASSERT(!ret);
+			cme_set_busy(cm_get_index(new),0);
 		}
 	}
 	lock_release(as->pt_lock);
