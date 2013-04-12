@@ -170,6 +170,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		paddr_t pa = (pte_get_location(pte)<<12);
 
 		cme_set_state(cm_get_index(pa),CME_DIRTY);
+		//V(dirty_pages); // Signal cleaner thread to run.  TODO: should it run on sleep timer instead?
 
 		elo = (pa & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
 		ehi = faultaddress & TLBHI_VPAGE;

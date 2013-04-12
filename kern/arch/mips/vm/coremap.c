@@ -64,7 +64,6 @@ static void mark_allocated(int ix, int iskern) {
     }
     else {
         coremap[ix].state = CME_DIRTY;
-        coremap[ix].disk_offset = swapfile_reserve_index();
         num_cm_user += 1;
     }
     KASSERT(num_cm_free+num_cm_user+num_cm_kernel == num_cm_entries);
@@ -120,10 +119,12 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     mark_allocated(ix, iskern);
 
     // If not kernel, update as and vaddr_base
+    // Also assign a disk offset for swapping
     if (!iskern) {
         KASSERT(va != 0);
         coremap[ix].as = as;
         coremap[ix].vaddr_base = va >> 12;
+        coremap[ix].disk_offset = swapfile_reserve_index();
     }
     return COREMAP_TO_PADDR(ix);
 }
@@ -188,7 +189,6 @@ void free_coremap_page(paddr_t pa, bool iskern) {
 
         KASSERT(coremap[ix].vaddr_base != 0);
         coremap[ix].vaddr_base = 0;
-        // KASSERT(coremap[ix].state != CME_DIRTY); TODO: uncomment
         coremap[ix].use_bit = 0;
         spinlock_acquire(&stat_lock);
         num_cm_user--;
@@ -231,7 +231,9 @@ int find_free_page(void){
  */
 int choose_evict_page(void){
     while(1){
-        if (cme_get_state(clock_hand) != CME_FIXED){
+        if (cme_get_state(clock_hand) == CME_CLEAN || 
+            cme_get_state(clock_hand) == CME_DIRTY){
+            
             if (cme_try_pin(clock_hand)){
                 if (cme_get_use(clock_hand)){
                     cme_set_use(clock_hand,0);
@@ -397,6 +399,10 @@ void swapfile_init(void){
     disk_map_lock = lock_create("disk map lock");
     if (disk_map_lock == NULL)
         panic("swapfile_init: could not create disk map lock");
+
+    //dirty_pages = sem_create("dirty pages",0);
+
+    //thread_fork("writer",writer_thread,NULL,0,NULL);
 }
 
 /*
@@ -525,6 +531,25 @@ int read_page(paddr_t ppn, unsigned offset){
     uio_kinit(&iov, &u, src, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
 
     return VOP_READ(swapfile,&u);
+}
+
+// NOTE: As of now, ignoring cleaner thread
+void writer_thread(void *junk, unsigned long num){
+    (void)junk;
+    (void)num;
+
+    int i;
+    while(1){
+        P(dirty_pages);
+        for (i=0; i<(int)num_cm_entries; i++){
+            if (cme_get_state(i) == CME_DIRTY){
+                // Write dirty page to memory
+                cme_set_state(i,CME_CLEAN);
+                // Signal CV
+                break;
+            }
+        }
+    }
 }
 
 /*

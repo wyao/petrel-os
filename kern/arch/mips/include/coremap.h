@@ -34,6 +34,7 @@ struct lock *cv_lock;
 struct vnode *swapfile;
 struct bitmap *disk_map;
 struct lock *disk_map_lock;
+struct semaphore *dirty_pages;
 
 /*
  * Page selection APIs
@@ -85,6 +86,7 @@ int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest);
 void evict_page(paddr_t ppn);
 int write_page(paddr_t ppn, unsigned offset);
 int read_page(paddr_t ppn, unsigned offset);
+void writer_thread(void *junk, unsigned long num);
 
 
 #endif /* _COREMAP_H_ */

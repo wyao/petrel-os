@@ -541,17 +541,20 @@ void pt_destroy(struct pt_ent **pt){
 			// FREE CM entry
 			for (j=0; j<PAGE_ENTRIES; j++) {
 				if (pte_get_exists(&pt[i][j])) {
-					pa = pte_get_location(&pt[i][j]) << 12;
-					if (pte_get_present(&pt[i][j])) {
-						if (cme_try_pin(cm_get_index(pa)))
+					if (pte_get_present(&pt[i][j])){
+						pa = pte_get_location(&pt[i][j]) << 12;
+
+						while(!cme_try_pin(cm_get_index(pa))) {
+							;
+						} // BUSY WAIT until page is pinned to ensure we are not being evicted
+						
+						if (pte_get_present(&pt[i][j]))
 							free_coremap_page(pa, false /* iskern */);
-						else {
-							KASSERT(0); // Can't happen
-						}
+						else 
+							swapfile_free_index(pte_get_location(&pt[i][j]));
 					}
-					else {
-						// Mark disk offset as available
-						KASSERT(0); // Can't happen without swap
+					else { //Swapped out - just have to free disk index
+						swapfile_free_index(pte_get_location(&pt[i][j]));
 					}
 				}
 			}
