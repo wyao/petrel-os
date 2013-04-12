@@ -6,6 +6,7 @@
 #include <thread.h>
 #include <addrspace.h>
 
+#define HEAP_MAX    0x40000000 // Max amount of space given to user heap
 
 int sys_sbrk(int amount, int *err) {
     struct addrspace *as = curthread->t_addrspace;
@@ -14,14 +15,15 @@ int sys_sbrk(int amount, int *err) {
     if (amount == 0)
         return as->heap_end;
     if (amount < 0) {
-        if (as->heap_end - amount >= as->heap_start) {
-            as->heap_end -= amount;
+        if ((long)as->heap_end + (long)amount >= (long)as->heap_start) {
+            as->heap_end += amount;
             return as->heap_end;
         }
         *err = EINVAL;
         return -1;
     }
-    if (as->heap_end + amount < USERSTACK - STACK_PAGES * PAGE_SIZE) {
+    if (as->heap_end + amount < USERSTACK - STACK_PAGES * PAGE_SIZE &&
+        as->heap_end + amount < as->heap_start + HEAP_MAX) {
         old = as->heap_end;
         as->heap_end += amount;
         return old;
