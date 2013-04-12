@@ -147,9 +147,6 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         KASSERT(va != 0);
         coremap[ix].as = as;
         coremap[ix].vaddr_base = va >> 12;
-        // We only want a enw offset if we are not swapping in
-        if (coremap[ix].disk_offset == -1)
-            coremap[ix].disk_offset = swapfile_reserve_index();
     }
     return COREMAP_TO_PADDR(ix);
 }

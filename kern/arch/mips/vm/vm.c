@@ -217,6 +217,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		}
 
 		// Give the coremap entry a new offset
+		cme_set_offset(cm_get_index(new),swapfile_reserve_index());
 		cme_set_busy(cm_get_index(new),0);
 	}
 	else { // Page exists either in memory or in swap

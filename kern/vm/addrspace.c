@@ -246,6 +246,8 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 						void *dest = (void *)PADDR_TO_KVADDR(base_new);
 						memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
 
+						cme_set_offset(cm_get_index(base_new),swapfile_reserve_index());
+
 						// Set new page table entry to a valid mapping to new location with same permissions
 						int perm = pte_get_permissions(&old->page_table[i][j]);
 						pt_update(new,PT_TO_VADDR(i,j),base_new>>12,perm,1);
@@ -549,11 +551,7 @@ void pt_destroy(struct pt_ent **pt){
 				if (pte_get_exists(&pt[i][j])) {
 					if (pte_get_present(&pt[i][j])){
 						pa = pte_get_location(&pt[i][j]) << 12;
-
-						if (pte_get_present(&pt[i][j]))
-							free_coremap_page(pa, false /* iskern */);
-						else 
-							swapfile_free_index(pte_get_location(&pt[i][j]));
+						free_coremap_page(pa, false /* iskern */);
 					}
 					else { //Swapped out - just have to free disk index
 						swapfile_free_index(pte_get_location(&pt[i][j]));
