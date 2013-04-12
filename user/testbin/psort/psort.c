@@ -331,6 +331,7 @@ doexactread(const char *path, int fd, void *buf, size_t len)
 	}
 }
 
+#if 0 /* let's not require subdirs */
 static
 void
 dowrite(const char *path, int fd, const void *buf, size_t len)
@@ -347,6 +348,7 @@ dowrite(const char *path, int fd, const void *buf, size_t len)
 		exit(1);
 	}
 }
+#endif /* 0 */
 
 static
 void

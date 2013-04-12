@@ -42,12 +42,13 @@
 #include <uio.h>
 #include <synch.h>
 #include <vfs.h>
+#include <buf.h>
 #include <device.h>
 #include <sfs.h>
 
 /* At bottom of file */
 static int sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int type,
-			 struct sfs_vnode **ret);
+			 struct sfs_vnode **ret, struct buf **ret_inodebuf);
 
 ////////////////////////////////////////////////////////////
 //
@@ -56,26 +57,29 @@ static int sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int type,
 /* Zero out a disk block. */
 static
 int
-sfs_clearblock(struct sfs_fs *sfs, uint32_t block)
+sfs_clearblock(struct sfs_fs *sfs, uint32_t block, struct buf **bufret)
 {
-	/* static -> automatically initialized to zero */
-	static char zeros[SFS_BLOCKSIZE];
-	return sfs_wblock(sfs, zeros, block);
-}
+	struct buf *buf;
+	void *ptr;
+	int result;
 
-/* Write an on-disk inode structure back out to disk. */
-static
-int
-sfs_sync_inode(struct sfs_vnode *sv)
-{
-	if (sv->sv_dirty) {
-		struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
-		int result = sfs_wblock(sfs, &sv->sv_i, sv->sv_ino);
-		if (result) {
-			return result;
-		}
-		sv->sv_dirty = false;
+	result = buffer_get(&sfs->sfs_absfs, block, SFS_BLOCKSIZE, &buf);
+	if (result) {
+		return result;
 	}
+
+	ptr = buffer_map(buf);
+	bzero(ptr, SFS_BLOCKSIZE);
+	buffer_mark_valid(buf);
+	buffer_mark_dirty(buf);
+
+	if (bufret != NULL) {
+		*bufret = buf;
+	}
+	else {
+		buffer_release(buf);
+	}
+
 	return 0;
 }
 
@@ -85,10 +89,15 @@ sfs_sync_inode(struct sfs_vnode *sv)
 
 /*
  * Allocate a block.
+ *
+ * Returns the block number, plus the buffer if BUFRET isn't null.
+ * The buffer, if any, is marked valid and dirty, and zeroed out.
+ *
+ * Requires 1 buffer.
  */
 static
 int
-sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock)
+sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock, struct buf **bufret)
 {
 	int result;
 
@@ -103,7 +112,7 @@ sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock)
 	}
 
 	/* Clear block before returning it */
-	return sfs_clearblock(sfs, *diskblock);
+	return sfs_clearblock(sfs, *diskblock, bufret);
 }
 
 /*
@@ -140,28 +149,26 @@ sfs_bused(struct sfs_fs *sfs, uint32_t diskblock)
  * the disk) given a file and the logical block number within that
  * file. If DOALLOC is set, and no such block exists, one will be
  * allocated.
+ *
+ * Requires up to 2 buffers, not counting inodebuf.
  */
 static
 int
-sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock, int doalloc,
-	 uint32_t *diskblock)
+sfs_bmap(struct sfs_vnode *sv, struct buf *inodebuf, uint32_t fileblock,
+	 int doalloc, uint32_t *diskblock)
 {
-	/*
-	 * I/O buffer for handling indirect blocks.
-	 *
-	 * Note: in real life (and when you've done the fs assignment)
-	 * you would get space from the disk buffer cache for this,
-	 * not use a static area.
-	 */
-	static uint32_t idbuf[SFS_DBPERIDB];
-
 	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
+	struct sfs_inode *inodeptr;
+	struct buf *idbuffer;
+	uint32_t *idbufdata;
 	uint32_t block;
 	uint32_t idblock;
 	uint32_t idnum, idoff;
 	int result;
 
-	KASSERT(sizeof(idbuf)==SFS_BLOCKSIZE);
+	KASSERT(SFS_DBPERIDB * sizeof(*idbufdata) == SFS_BLOCKSIZE);
+
+	inodeptr = buffer_map(inodebuf);
 
 	/*
 	 * If the block we want is one of the direct blocks...
@@ -170,20 +177,20 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock, int doalloc,
 		/*
 		 * Get the block number
 		 */
-		block = sv->sv_i.sfi_direct[fileblock];
+		block = inodeptr->sfi_direct[fileblock];
 
 		/*
 		 * Do we need to allocate?
 		 */
 		if (block==0 && doalloc) {
-			result = sfs_balloc(sfs, &block);
+			result = sfs_balloc(sfs, &block, NULL);
 			if (result) {
 				return result;
 			}
 
 			/* Remember what we allocated; mark inode dirty */
-			sv->sv_i.sfi_direct[fileblock] = block;
-			sv->sv_dirty = true;
+			inodeptr->sfi_direct[fileblock] = block;
+			buffer_mark_dirty(inodebuf);
 		}
 
 		/*
@@ -218,7 +225,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock, int doalloc,
 	}
 
 	/* Get the disk block number of the indirect block. */
-	idblock = sv->sv_i.sfi_indirect;
+	idblock = inodeptr->sfi_indirect;
 
 	if (idblock==0 && !doalloc) {
 		/*
@@ -236,48 +243,56 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock, int doalloc,
 		 * the indirect block. Thus, we need to allocate an
 		 * indirect block.
 		 */
-		result = sfs_balloc(sfs, &idblock);
+		result = sfs_balloc(sfs, &idblock, &idbuffer);
 		if (result) {
 			return result;
 		}
 
 		/* Remember the block we just allocated */
-		sv->sv_i.sfi_indirect = idblock;
+		inodeptr->sfi_indirect = idblock;
 
 		/* Mark the inode dirty */
-		sv->sv_dirty = true;
+		buffer_mark_dirty(inodebuf);
 
 		/* Clear the indirect block buffer */
-		bzero(idbuf, sizeof(idbuf));
+
+		idbufdata = buffer_map(idbuffer);
+
+		/*
+		 * sfs_balloc already does this...
+		 *
+		 * bzero(idbufdata, SFS_BLOCKSIZE);
+		 * buffer_mark_dirty(idbuffer);
+		 */
 	}
 	else {
 		/*
 		 * We already have an indirect block allocated; load it.
 		 */
-		result = sfs_rblock(sfs, idbuf, idblock);
+		result = buffer_read(&sfs->sfs_absfs, idblock, SFS_BLOCKSIZE,
+				     &idbuffer);
 		if (result) {
 			return result;
 		}
+		idbufdata = buffer_map(idbuffer);
 	}
 
 	/* Get the block out of the indirect block buffer */
-	block = idbuf[idoff];
+	block = idbufdata[idoff];
 
 	/* If there's no block there, allocate one */
 	if (block==0 && doalloc) {
-		result = sfs_balloc(sfs, &block);
+		result = sfs_balloc(sfs, &block, NULL);
 		if (result) {
+			buffer_release(idbuffer);
 			return result;
 		}
 
 		/* Remember the block we allocated */
-		idbuf[idoff] = block;
+		idbufdata[idoff] = block;
 
-		/* The indirect block is now dirty; write it back */
-		result = sfs_wblock(sfs, idbuf, idblock);
-		if (result) {
-			return result;
-		}
+		/* The indirect block is now dirty; mark it so */
+		buffer_mark_dirty(idbuffer);
 	}
 
 	/* Hand back the result and return. */
@@ -285,6 +300,9 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock, int doalloc,
 		panic("sfs: Data block %u (block %u of file %u) marked free\n",
 		      block, fileblock, sv->sv_ino);
 	}
+
+	buffer_release(idbuffer);
+
 	*diskblock = block;
 	return 0;
 }
@@ -302,22 +320,17 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock, int doalloc,
  * skipstart is the number of bytes to skip past at the beginning of
  * the sector; len is the number of bytes to actually read or write.
  * uio is the area to do the I/O into.
+ *
+ * Requires up to 2 buffers, not counting inodebuf.
  */
 static
 int
-sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
+sfs_partialio(struct sfs_vnode *sv, struct buf *inodebuf, struct uio *uio,
 	      uint32_t skipstart, uint32_t len)
 {
-	/*
-	 * I/O buffer for handling partial sectors.
-	 *
-	 * Note: in real life (and when you've done the fs assignment)
-	 * you would get space from the disk buffer cache for this,
-	 * not use a static area.
-	 */
-	static char iobuf[SFS_BLOCKSIZE];
-
 	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
+	struct buf *iobuffer;
+	char *ioptr;
 	uint32_t diskblock;
 	uint32_t fileblock;
 	int result;
@@ -331,7 +344,7 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	fileblock = uio->uio_offset / SFS_BLOCKSIZE;
 
 	/* Get the disk block number */
-	result = sfs_bmap(sv, fileblock, doalloc, &diskblock);
+	result = sfs_bmap(sv, inodebuf, fileblock, doalloc, &diskblock);
 	if (result) {
 		return result;
 	}
@@ -339,16 +352,19 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	if (diskblock == 0) {
 		/*
 		 * There was no block mapped at this point in the file.
-		 * Zero the buffer.
+		 *
+		 * We must be reading, or sfs_bmap would have
+		 * allocated a block for us.
 		 */
 		KASSERT(uio->uio_rw == UIO_READ);
-		bzero(iobuf, sizeof(iobuf));
+		return uiomovezeros(len, uio);
 	}
 	else {
 		/*
 		 * Read the block.
 		 */
-		result = sfs_rblock(sfs, iobuf, diskblock);
+		result = buffer_read(&sfs->sfs_absfs, diskblock, SFS_BLOCKSIZE,
+				     &iobuffer);
 		if (result) {
 			return result;
 		}
@@ -357,46 +373,46 @@ sfs_partialio(struct sfs_vnode *sv, struct uio *uio,
 	/*
 	 * Now perform the requested operation into/out of the buffer.
 	 */
-	result = uiomove(iobuf+skipstart, len, uio);
+	ioptr = buffer_map(iobuffer);
+	result = uiomove(ioptr+skipstart, len, uio);
 	if (result) {
+		buffer_release(iobuffer);
 		return result;
 	}
 
 	/*
-	 * If it was a write, write back the modified block.
+	 * If it was a write, mark the modified block dirty.
 	 */
 	if (uio->uio_rw == UIO_WRITE) {
-		result = sfs_wblock(sfs, iobuf, diskblock);
-		if (result) {
-			return result;
-		}
+		buffer_mark_dirty(iobuffer);
 	}
 
+	buffer_release(iobuffer);
 	return 0;
 }
 
 /*
  * Do I/O (either read or write) of a single whole block.
+ *
+ * Requires up to 2 buffers, not counting inodebuf.
  */
 static
 int
-sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
+sfs_blockio(struct sfs_vnode *sv, struct buf *inodebuf, struct uio *uio)
 {
 	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
+	struct buf *iobuf;
+	void *ioptr;
 	uint32_t diskblock;
 	uint32_t fileblock;
 	int result;
 	int doalloc = (uio->uio_rw==UIO_WRITE);
-	off_t saveoff;
-	off_t diskoff;
-	off_t saveres;
-	off_t diskres;
 
 	/* Get the block number within the file */
 	fileblock = uio->uio_offset / SFS_BLOCKSIZE;
 
 	/* Look up the disk block number */
-	result = sfs_bmap(sv, fileblock, doalloc, &diskblock);
+	result = sfs_bmap(sv, inodebuf, fileblock, doalloc, &diskblock);
 	if (result) {
 		return result;
 	}
@@ -412,45 +428,60 @@ sfs_blockio(struct sfs_vnode *sv, struct uio *uio)
 		return uiomovezeros(SFS_BLOCKSIZE, uio);
 	}
 
-	/*
-	 * Do the I/O directly to the uio region. Save the uio_offset,
-	 * and substitute one that makes sense to the device.
-	 */
-	saveoff = uio->uio_offset;
-	diskoff = diskblock * SFS_BLOCKSIZE;
-	uio->uio_offset = diskoff;
+	if (uio->uio_rw == UIO_READ) {
+		result = buffer_read(&sfs->sfs_absfs, diskblock, SFS_BLOCKSIZE,
+				     &iobuf);
+	}
+	else {
+		result = buffer_get(&sfs->sfs_absfs, diskblock, SFS_BLOCKSIZE,
+				    &iobuf);
+	}
+	if (result) {
+		return result;
+	}
 
 	/*
-	 * Temporarily set the residue to be one block size.
+	 * Do the I/O into the buffer.
 	 */
-	KASSERT(uio->uio_resid >= SFS_BLOCKSIZE);
-	saveres = uio->uio_resid;
-	diskres = SFS_BLOCKSIZE;
-	uio->uio_resid = diskres;
+	ioptr = buffer_map(iobuf);
+	result = uiomove(ioptr, SFS_BLOCKSIZE, uio);
+	if (result) {
+		buffer_release(iobuf);
+		return result;
+	}
 
-	result = sfs_rwblock(sfs, uio);
+	if (uio->uio_rw == UIO_WRITE) {
+		buffer_mark_valid(iobuf);
+		buffer_mark_dirty(iobuf);
+	}
 
-	/*
-	 * Now, restore the original uio_offset and uio_resid and update
-	 * them by the amount of I/O done.
-	 */
-	uio->uio_offset = (uio->uio_offset - diskoff) + saveoff;
-	uio->uio_resid = (uio->uio_resid - diskres) + saveres;
-
-	return result;
+	buffer_release(iobuf);
+	return 0;
 }
 
 /*
  * Do I/O of a whole region of data, whether or not it's block-aligned.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
 sfs_io(struct sfs_vnode *sv, struct uio *uio)
 {
+	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
 	uint32_t blkoff;
 	uint32_t nblocks, i;
 	int result = 0;
 	uint32_t extraresid = 0;
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
+
+	result = buffer_read(&sfs->sfs_absfs, sv->sv_ino,
+			     SFS_BLOCKSIZE, &inodebuf);
+	if (result) {
+		return result;
+	}
+	inodeptr = buffer_map(inodebuf);
 
 	/*
 	 * If reading, check for EOF. If we can read a partial area,
@@ -458,11 +489,14 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 	 * add it back to uio_resid at the end.
 	 */
 	if (uio->uio_rw == UIO_READ) {
-		off_t size = sv->sv_i.sfi_size;
-		off_t endpos = uio->uio_offset + uio->uio_resid;
+		off_t size, endpos;
+
+		size = inodeptr->sfi_size;
+		endpos = uio->uio_offset + uio->uio_resid;
 
 		if (uio->uio_offset >= size) {
 			/* At or past EOF - just return */
+			buffer_release(inodebuf);
 			return 0;
 		}
 
@@ -490,7 +524,7 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 		}
 
 		/* Call sfs_partialio() to do it. */
-		result = sfs_partialio(sv, uio, skip, len);
+		result = sfs_partialio(sv, inodebuf, uio, skip, len);
 		if (result) {
 			goto out;
 		}
@@ -507,7 +541,7 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 	KASSERT(uio->uio_offset % SFS_BLOCKSIZE == 0);
 	nblocks = uio->uio_resid / SFS_BLOCKSIZE;
 	for (i=0; i<nblocks; i++) {
-		result = sfs_blockio(sv, uio);
+		result = sfs_blockio(sv, inodebuf, uio);
 		if (result) {
 			goto out;
 		}
@@ -519,7 +553,7 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 	KASSERT(uio->uio_resid < SFS_BLOCKSIZE);
 
 	if (uio->uio_resid > 0) {
-		result = sfs_partialio(sv, uio, 0, uio->uio_resid);
+		result = sfs_partialio(sv, inodebuf, uio, 0, uio->uio_resid);
 		if (result) {
 			goto out;
 		}
@@ -529,10 +563,11 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 
 	/* If writing, adjust file length */
 	if (uio->uio_rw == UIO_WRITE &&
-	    uio->uio_offset > (off_t)sv->sv_i.sfi_size) {
-		sv->sv_i.sfi_size = uio->uio_offset;
-		sv->sv_dirty = true;
+	    uio->uio_offset > (off_t)inodeptr->sfi_size) {
+		inodeptr->sfi_size = uio->uio_offset;
+		buffer_mark_dirty(inodebuf);
 	}
+	buffer_release(inodebuf);
 
 	/* Add in any extra amount we couldn't read because of EOF */
 	uio->uio_resid += extraresid;
@@ -548,6 +583,8 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 /*
  * Read the directory entry out of slot SLOT of a directory vnode.
  * The "slot" is the index of the directory entry, starting at 0.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -582,6 +619,8 @@ sfs_readdir(struct sfs_vnode *sv, struct sfs_dir *sd, int slot)
 /*
  * Write (overwrite) the directory entry in slot SLOT of a directory
  * vnode.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -618,28 +657,46 @@ sfs_writedir(struct sfs_vnode *sv, struct sfs_dir *sd, int slot)
  * Compute the number of entries in a directory.
  * This actually computes the number of existing slots, and does not
  * account for empty slots.
+ *
+ * Requires 1 buffer.
  */
 static
 int
-sfs_dir_nentries(struct sfs_vnode *sv)
+sfs_dir_nentries(struct sfs_vnode *sv, int *ret)
 {
+	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
 	off_t size;
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
+	int result;
 
-	KASSERT(sv->sv_i.sfi_type == SFS_TYPE_DIR);
+	KASSERT(sv->sv_type == SFS_TYPE_DIR);
 
-	size = sv->sv_i.sfi_size;
+	result = buffer_read(&sfs->sfs_absfs, sv->sv_ino,
+			     SFS_BLOCKSIZE, &inodebuf);
+	if (result) {
+		return result;
+	}
+	inodeptr = buffer_map(inodebuf);
+
+	size = inodeptr->sfi_size;
 	if (size % sizeof(struct sfs_dir) != 0) {
 		panic("sfs: directory %u: Invalid size %llu\n",
 		      sv->sv_ino, size);
 	}
 
-	return size / sizeof(struct sfs_dir);
+	buffer_release(inodebuf);
+
+	*ret = size / sizeof(struct sfs_dir);
+	return 0;
 }
 
 /*
  * Search a directory for a particular filename in a directory, and
  * return its inode number, its slot, and/or the slot number of an
  * empty directory slot if one is found.
+ *
+ * Requires up to 3 buffers.
  */
 
 static
@@ -649,8 +706,13 @@ sfs_dir_findname(struct sfs_vnode *sv, const char *name,
 {
 	struct sfs_dir tsd;
 	int found = 0;
-	int nentries = sfs_dir_nentries(sv);
+	int nentries;
 	int i, result;
+
+	result = sfs_dir_nentries(sv, &nentries);
+	if (result) {
+		return result;
+	}
 
 	/* For each slot... */
 	for (i=0; i<nentries; i++) {
@@ -691,6 +753,8 @@ sfs_dir_findname(struct sfs_vnode *sv, const char *name,
 /*
  * Create a link in a directory to the specified inode by number, with
  * the specified name, and optionally hand back the slot.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -715,7 +779,10 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot)
 
 	/* If we didn't get an empty slot, add the entry at the end. */
 	if (emptyslot < 0) {
-		emptyslot = sfs_dir_nentries(sv);
+		result = sfs_dir_nentries(sv, &emptyslot);
+		if (result) {
+			return result;
+		}
 	}
 
 	/* Set up the entry. */
@@ -735,6 +802,8 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot)
 
 /*
  * Unlink a name in a directory, by slot number.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -753,15 +822,20 @@ sfs_dir_unlink(struct sfs_vnode *sv, int slot)
 /*
  * Look for a name in a directory and hand back a vnode for the
  * file, if there is one.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
 sfs_lookonce(struct sfs_vnode *sv, const char *name,
 		struct sfs_vnode **ret,
+		struct buf **ret_inodebuf,
 		int *slot)
 {
 	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
 	uint32_t ino;
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
 	int result;
 
 	result = sfs_dir_findname(sv, name, &ino, slot, NULL);
@@ -769,14 +843,23 @@ sfs_lookonce(struct sfs_vnode *sv, const char *name,
 		return result;
 	}
 
-	result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, ret);
+	result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, ret, &inodebuf);
 	if (result) {
 		return result;
 	}
 
-	if ((*ret)->sv_i.sfi_linkcount == 0) {
+	inodeptr = buffer_map(inodebuf);
+
+	if (inodeptr->sfi_linkcount == 0) {
 		panic("sfs: Link count of file %u found in dir %u is 0\n",
 		      (*ret)->sv_ino, sv->sv_ino);
+	}
+
+	if (ret_inodebuf != NULL) {
+		*ret_inodebuf = inodebuf;
+	}
+	else {
+		buffer_release(inodebuf);
 	}
 
 	return 0;
@@ -788,10 +871,13 @@ sfs_lookonce(struct sfs_vnode *sv, const char *name,
 
 /*
  * Create a new filesystem object and hand back its vnode.
+ *
+ * Requires 1 buffer.
  */
 static
 int
-sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret)
+sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret,
+	    struct buf **ret_inodebuf)
 {
 	uint32_t ino;
 	int result;
@@ -801,7 +887,7 @@ sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret)
 	 * number is the block number, so just get a block.)
 	 */
 
-	result = sfs_balloc(sfs, &ino);
+	result = sfs_balloc(sfs, &ino, NULL);
 	if (result) {
 		return result;
 	}
@@ -810,7 +896,7 @@ sfs_makeobj(struct sfs_fs *sfs, int type, struct sfs_vnode **ret)
 	 * Now load a vnode for it.
 	 */
 
-	return sfs_loadvnode(sfs, ino, type, ret);
+	return sfs_loadvnode(sfs, ino, type, ret, ret_inodebuf);
 }
 
 ////////////////////////////////////////////////////////////
@@ -875,14 +961,18 @@ static
 int
 sfs_close(struct vnode *v)
 {
-	/* Sync it. */
-	return VOP_FSYNC(v);
+	/* Nothing. */
+	(void)v;
+	return 0;
 }
 
 /*
  * Called when the vnode refcount (in-memory usage count) hits zero.
  *
  * This function should try to avoid returning errors other than EBUSY.
+ *
+ * Requires 1 buffer, and then independently calls VOP_TRUNCATE, which
+ * takes 3.
  */
 static
 int
@@ -890,6 +980,8 @@ sfs_reclaim(struct vnode *v)
 {
 	struct sfs_vnode *sv = v->vn_data;
 	struct sfs_fs *sfs = v->vn_fs->fs_data;
+	struct buf *ibuf;
+	struct sfs_inode *iptr;
 	unsigned ix, i, num;
 	int result;
 
@@ -910,25 +1002,38 @@ sfs_reclaim(struct vnode *v)
 		return EBUSY;
 	}
 
-	/* If there are no on-disk references to the file either, erase it. */
-	if (sv->sv_i.sfi_linkcount==0) {
-		result = VOP_TRUNCATE(&sv->sv_v, 0);
-		if (result) {
-			vfs_biglock_release();
-			return result;
-		}
-	}
+	reserve_buffers(1, SFS_BLOCKSIZE);
 
-	/* Sync the inode to disk */
-	result = sfs_sync_inode(sv);
+	/* Get the on-disk inode. */
+	result = buffer_read(&sfs->sfs_absfs, sv->sv_ino, SFS_BLOCKSIZE,
+			     &ibuf);
 	if (result) {
+		/*
+		 * This case is likely to lead to problems, but
+		 * there's essentially no helping it...
+		 */
 		vfs_biglock_release();
 		return result;
 	}
+	iptr = buffer_map(ibuf);
 
-	/* If there are no on-disk references, discard the inode */
-	if (sv->sv_i.sfi_linkcount==0) {
+	/* If there are no on-disk references to the file either, erase it. */
+	if (iptr->sfi_linkcount==0) {
+		buffer_release(ibuf);
+		unreserve_buffers(1, SFS_BLOCKSIZE);
+		result = VOP_TRUNCATE(&sv->sv_v, 0);
+		if (result) {
+			buffer_release(ibuf);
+			vfs_biglock_release();
+			return result;
+		}
+		/* Discard the inode */
+		buffer_drop(&sfs->sfs_absfs, sv->sv_ino, SFS_BLOCKSIZE);
 		sfs_bfree(sfs, sv->sv_ino);
+	}
+	else {
+		buffer_release(ibuf);
+		unreserve_buffers(1, SFS_BLOCKSIZE);
 	}
 
 	/* Remove the vnode structure from the table in the struct sfs_fs. */
@@ -961,6 +1066,8 @@ sfs_reclaim(struct vnode *v)
 
 /*
  * Called for read(). sfs_io() does the work.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -972,7 +1079,11 @@ sfs_read(struct vnode *v, struct uio *uio)
 	KASSERT(uio->uio_rw==UIO_READ);
 
 	vfs_biglock_acquire();
+	reserve_buffers(3, SFS_BLOCKSIZE);
+
 	result = sfs_io(sv, uio);
+
+	unreserve_buffers(3, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 
 	return result;
@@ -980,6 +1091,8 @@ sfs_read(struct vnode *v, struct uio *uio)
 
 /*
  * Called for write(). sfs_io() does the work.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -991,7 +1104,11 @@ sfs_write(struct vnode *v, struct uio *uio)
 	KASSERT(uio->uio_rw==UIO_WRITE);
 
 	vfs_biglock_acquire();
+	reserve_buffers(3, SFS_BLOCKSIZE);
+
 	result = sfs_io(sv, uio);
+
+	unreserve_buffers(3, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 
 	return result;
@@ -1017,29 +1134,53 @@ sfs_ioctl(struct vnode *v, int op, userptr_t data)
 
 /*
  * Called for stat/fstat/lstat.
+ *
+ * Requires 1 buffer.
  */
 static
 int
 sfs_stat(struct vnode *v, struct stat *statbuf)
 {
 	struct sfs_vnode *sv = v->vn_data;
+	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
 	int result;
+
+	vfs_biglock_acquire();
 
 	/* Fill in the stat structure */
 	bzero(statbuf, sizeof(struct stat));
 
 	result = VOP_GETTYPE(v, &statbuf->st_mode);
 	if (result) {
+		vfs_biglock_release();
 		return result;
 	}
 
-	statbuf->st_size = sv->sv_i.sfi_size;
+	reserve_buffers(1, SFS_BLOCKSIZE);
+
+	result = buffer_read(&sfs->sfs_absfs, sv->sv_ino,
+			     SFS_BLOCKSIZE, &inodebuf);
+	if (result) {
+		unreserve_buffers(1, SFS_BLOCKSIZE);
+		vfs_biglock_release();
+		return result;
+	}
+
+	inodeptr = buffer_map(inodebuf);
+
+	statbuf->st_size = inodeptr->sfi_size;
 
 	/* We don't support these yet; you get to implement them */
 	statbuf->st_nlink = 0;
 	statbuf->st_blocks = 0;
 
-	/* Fill in other field as desired/possible... */
+	/* Fill in other fields as desired/possible... */
+
+	buffer_release(inodebuf);
+	unreserve_buffers(1, SFS_BLOCKSIZE);
+	vfs_biglock_release();
 
 	return 0;
 }
@@ -1055,7 +1196,7 @@ sfs_gettype(struct vnode *v, uint32_t *ret)
 
 	vfs_biglock_acquire();
 
-	switch (sv->sv_i.sfi_type) {
+	switch (sv->sv_type) {
 	case SFS_TYPE_FILE:
 		*ret = S_IFREG;
 		vfs_biglock_release();
@@ -1066,7 +1207,8 @@ sfs_gettype(struct vnode *v, uint32_t *ret)
 		return 0;
 	}
 	panic("sfs: gettype: Invalid inode type (inode %u, type %u)\n",
-	      sv->sv_ino, sv->sv_i.sfi_type);
+	      sv->sv_ino, sv->sv_type);
+	vfs_biglock_release();
 	return EINVAL;
 }
 
@@ -1092,21 +1234,18 @@ sfs_tryseek(struct vnode *v, off_t pos)
 }
 
 /*
- * Called for fsync(), and also on filesystem unmount, global sync(),
- * and some other cases.
+ * Called for fsync().
+ *
+ * Since for now the buffer cache can't sync just one file, sync the
+ * whole fs.
  */
 static
 int
 sfs_fsync(struct vnode *v)
 {
 	struct sfs_vnode *sv = v->vn_data;
-	int result;
 
-	vfs_biglock_acquire();
-	result = sfs_sync_inode(sv);
-	vfs_biglock_release();
-
-	return result;
+	return FSOP_SYNC(sv->sv_v.vn_fs);
 }
 
 /*
@@ -1122,22 +1261,21 @@ sfs_mmap(struct vnode *v   /* add stuff as needed */)
 
 /*
  * Called for ftruncate() and from sfs_reclaim.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
 sfs_truncate(struct vnode *v, off_t len)
 {
-	/*
-	 * I/O buffer for handling the indirect block.
-	 *
-	 * Note: in real life (and when you've done the fs assignment)
-	 * you would get space from the disk buffer cache for this,
-	 * not use a static area.
-	 */
-	static uint32_t idbuf[SFS_DBPERIDB];
-
 	struct sfs_vnode *sv = v->vn_data;
 	struct sfs_fs *sfs = sv->sv_v.vn_fs->fs_data;
+
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
+
+	struct buf *idbuffer;
+	uint32_t *idptr;
 
 	/* Length in blocks (divide rounding up) */
 	uint32_t blocklen = DIVROUNDUP(len, SFS_BLOCKSIZE);
@@ -1145,27 +1283,39 @@ sfs_truncate(struct vnode *v, off_t len)
 	uint32_t i, j, block;
 	uint32_t idblock, baseblock, highblock;
 	int result;
-	int hasnonzero, iddirty;
+	int hasnonzero;
 
-	KASSERT(sizeof(idbuf)==SFS_BLOCKSIZE);
+	KASSERT(SFS_DBPERIDB * sizeof(*idptr) == SFS_BLOCKSIZE);
 
 	vfs_biglock_acquire();
+
+	reserve_buffers(3, SFS_BLOCKSIZE);
+
+	result = buffer_read(&sfs->sfs_absfs, sv->sv_ino, SFS_BLOCKSIZE,
+			     &inodebuf);
+	if (result) {
+		unreserve_buffers(3, SFS_BLOCKSIZE);
+		vfs_biglock_release();
+		return result;
+	}
+	inodeptr = buffer_map(inodebuf);
 
 	/*
 	 * Go through the direct blocks. Discard any that are
 	 * past the limit we're truncating to.
 	 */
 	for (i=0; i<SFS_NDIRECT; i++) {
-		block = sv->sv_i.sfi_direct[i];
+		block = inodeptr->sfi_direct[i];
 		if (i >= blocklen && block != 0) {
+			buffer_drop(&sfs->sfs_absfs, block, SFS_BLOCKSIZE);
 			sfs_bfree(sfs, block);
-			sv->sv_i.sfi_direct[i] = 0;
-			sv->sv_dirty = true;
+			inodeptr->sfi_direct[i] = 0;
+			buffer_mark_dirty(inodebuf);
 		}
 	}
 
 	/* Indirect block number */
-	idblock = sv->sv_i.sfi_indirect;
+	idblock = inodeptr->sfi_indirect;
 
 	/* The lowest block in the indirect block */
 	baseblock = SFS_NDIRECT;
@@ -1177,49 +1327,53 @@ sfs_truncate(struct vnode *v, off_t len)
 		/* We're past the proposed EOF; may need to free stuff */
 
 		/* Read the indirect block */
-		result = sfs_rblock(sfs, idbuf, idblock);
+		result = buffer_read(&sfs->sfs_absfs, idblock, SFS_BLOCKSIZE,
+				     &idbuffer);
 		if (result) {
+			buffer_release(inodebuf);
+			unreserve_buffers(3, SFS_BLOCKSIZE);
 			vfs_biglock_release();
 			return result;
 		}
+		idptr = buffer_map(idbuffer);
 
 		hasnonzero = 0;
-		iddirty = 0;
 		for (j=0; j<SFS_DBPERIDB; j++) {
 			/* Discard any blocks that are past the new EOF */
-			if (blocklen < baseblock+j && idbuf[j] != 0) {
-				sfs_bfree(sfs, idbuf[j]);
-				idbuf[j] = 0;
-				iddirty = 1;
+			if (blocklen < baseblock+j && idptr[j] != 0) {
+				buffer_drop(&sfs->sfs_absfs, idptr[j],
+					    SFS_BLOCKSIZE);
+				sfs_bfree(sfs, idptr[j]);
+				idptr[j] = 0;
+				buffer_mark_dirty(idbuffer);
 			}
 			/* Remember if we see any nonzero blocks in here */
-			if (idbuf[j]!=0) {
+			if (idptr[j] != 0) {
 				hasnonzero=1;
 			}
 		}
 
 		if (!hasnonzero) {
 			/* The whole indirect block is empty now; free it */
+			buffer_release_and_invalidate(idbuffer);
 			sfs_bfree(sfs, idblock);
-			sv->sv_i.sfi_indirect = 0;
-			sv->sv_dirty = true;
+			inodeptr->sfi_indirect = 0;
+			buffer_mark_dirty(inodebuf);
 		}
-		else if (iddirty) {
-			/* The indirect block is dirty; write it back */
-			result = sfs_wblock(sfs, idbuf, idblock);
-			if (result) {
-				vfs_biglock_release();
-				return result;
-			}
+		else {
+			buffer_release(idbuffer);
 		}
 	}
 
 	/* Set the file size */
-	sv->sv_i.sfi_size = len;
+	inodeptr->sfi_size = len;
 
 	/* Mark the inode dirty */
-	sv->sv_dirty = true;
+	buffer_mark_dirty(inodebuf);
 
+	buffer_release(inodebuf);
+
+	unreserve_buffers(3, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 	return 0;
 }
@@ -1247,6 +1401,8 @@ sfs_namefile(struct vnode *vv, struct uio *uio)
 /*
  * Create a file. If EXCL is set, insist that the filename not already
  * exist; otherwise, if it already exists, just open it.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -1256,42 +1412,51 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	struct sfs_fs *sfs = v->vn_fs->fs_data;
 	struct sfs_vnode *sv = v->vn_data;
 	struct sfs_vnode *newguy;
+	struct buf *new_inodebuf;
+	struct sfs_inode *new_inodeptr;
 	uint32_t ino;
 	int result;
 
 	vfs_biglock_acquire();
+	reserve_buffers(3, SFS_BLOCKSIZE);
 
 	/* Look up the name */
 	result = sfs_dir_findname(sv, name, &ino, NULL, NULL);
 	if (result!=0 && result!=ENOENT) {
+		unreserve_buffers(3, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return result;
 	}
 
 	/* If it exists and we didn't want it to, fail */
 	if (result==0 && excl) {
+		unreserve_buffers(3, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return EEXIST;
 	}
 
 	if (result==0) {
 		/* We got a file; load its vnode and return */
-		result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, &newguy);
+		result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, &newguy,NULL);
 		if (result) {
+			unreserve_buffers(3, SFS_BLOCKSIZE);
 			vfs_biglock_release();
 			return result;
 		}
 		*ret = &newguy->sv_v;
+		unreserve_buffers(3, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return 0;
 	}
 
 	/* Didn't exist - create it */
-	result = sfs_makeobj(sfs, SFS_TYPE_FILE, &newguy);
+	result = sfs_makeobj(sfs, SFS_TYPE_FILE, &newguy, &new_inodebuf);
 	if (result) {
+		unreserve_buffers(3, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return result;
 	}
+	new_inodeptr = buffer_map(new_inodebuf);
 
 	/* We don't currently support file permissions; ignore MODE */
 	(void)mode;
@@ -1299,19 +1464,23 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	/* Link it into the directory */
 	result = sfs_dir_link(sv, name, newguy->sv_ino, NULL);
 	if (result) {
+		buffer_release(new_inodebuf);
+		unreserve_buffers(3, SFS_BLOCKSIZE);
 		VOP_DECREF(&newguy->sv_v);
 		vfs_biglock_release();
 		return result;
 	}
 
 	/* Update the linkcount of the new file */
-	newguy->sv_i.sfi_linkcount++;
+	new_inodeptr->sfi_linkcount++;
 
 	/* and consequently mark it dirty. */
-	newguy->sv_dirty = true;
+	buffer_mark_dirty(new_inodebuf);
+	buffer_release(new_inodebuf);
 
 	*ret = &newguy->sv_v;
 
+	unreserve_buffers(3, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 	return 0;
 }
@@ -1320,6 +1489,8 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
  * Make a hard link to a file.
  * The VFS layer should prevent this being called unless both
  * vnodes are ours.
+ *
+ * Requires up to 4 buffers.
  */
 static
 int
@@ -1327,29 +1498,48 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 {
 	struct sfs_vnode *sv = dir->vn_data;
 	struct sfs_vnode *f = file->vn_data;
+	struct sfs_fs *sfs = file->vn_fs->fs_data;
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
 	int result;
 
 	KASSERT(file->vn_fs == dir->vn_fs);
 
 	vfs_biglock_acquire();
+	reserve_buffers(4, SFS_BLOCKSIZE);
+
+	result = buffer_read(&sfs->sfs_absfs, f->sv_ino, SFS_BLOCKSIZE,
+			     &inodebuf);
+	if (result) {
+		unreserve_buffers(4, SFS_BLOCKSIZE);
+		vfs_biglock_release();
+		return result;
+	}
 
 	/* Just create a link */
 	result = sfs_dir_link(sv, name, f->sv_ino, NULL);
 	if (result) {
+		buffer_release(inodebuf);
+		unreserve_buffers(4, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return result;
 	}
 
 	/* and update the link count, marking the inode dirty */
-	f->sv_i.sfi_linkcount++;
-	f->sv_dirty = true;
+	inodeptr = buffer_map(inodebuf);
+	inodeptr->sfi_linkcount++;
+	buffer_mark_dirty(inodebuf);
 
+	buffer_release(inodebuf);
+	unreserve_buffers(4, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 	return 0;
 }
 
 /*
  * Delete a file.
+ *
+ * Requires up to 4 buffers.
  */
 static
 int
@@ -1357,14 +1547,18 @@ sfs_remove(struct vnode *dir, const char *name)
 {
 	struct sfs_vnode *sv = dir->vn_data;
 	struct sfs_vnode *victim;
+	struct buf *victim_inodebuf;
+	struct sfs_inode *victim_inodeptr;
 	int slot;
 	int result;
 
 	vfs_biglock_acquire();
+	reserve_buffers(4, SFS_BLOCKSIZE);
 
 	/* Look for the file and fetch a vnode for it. */
-	result = sfs_lookonce(sv, name, &victim, &slot);
+	result = sfs_lookonce(sv, name, &victim, &victim_inodebuf, &slot);
 	if (result) {
+		unreserve_buffers(4, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return result;
 	}
@@ -1373,10 +1567,14 @@ sfs_remove(struct vnode *dir, const char *name)
 	result = sfs_dir_unlink(sv, slot);
 	if (result==0) {
 		/* If we succeeded, decrement the link count. */
-		KASSERT(victim->sv_i.sfi_linkcount > 0);
-		victim->sv_i.sfi_linkcount--;
-		victim->sv_dirty = true;
+		victim_inodeptr = buffer_map(victim_inodebuf);
+		KASSERT(victim_inodeptr->sfi_linkcount > 0);
+		victim_inodeptr->sfi_linkcount--;
+		buffer_mark_dirty(victim_inodebuf);
 	}
+
+	buffer_release(victim_inodebuf);
+	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	/* Discard the reference that sfs_lookonce got us */
 	VOP_DECREF(&victim->sv_v);
@@ -1390,6 +1588,8 @@ sfs_remove(struct vnode *dir, const char *name)
  *
  * Since we don't support subdirectories, assumes that the two
  * directories passed are the same.
+ *
+ * Requires up to 4 buffers.
  */
 static
 int
@@ -1398,23 +1598,28 @@ sfs_rename(struct vnode *d1, const char *n1,
 {
 	struct sfs_vnode *sv = d1->vn_data;
 	struct sfs_vnode *g1;
+	struct buf *g1_inodebuf;
+	struct sfs_inode *g1_inodeptr;
 	int slot1, slot2;
 	int result, result2;
 
 	vfs_biglock_acquire();
+	reserve_buffers(4, SFS_BLOCKSIZE);
 
 	KASSERT(d1==d2);
 	KASSERT(sv->sv_ino == SFS_ROOT_LOCATION);
 
 	/* Look up the old name of the file and get its inode and slot number*/
-	result = sfs_lookonce(sv, n1, &g1, &slot1);
+	result = sfs_lookonce(sv, n1, &g1, &g1_inodebuf, &slot1);
 	if (result) {
+		unreserve_buffers(4, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return result;
 	}
+	g1_inodeptr = buffer_map(g1_inodebuf);
 
 	/* We don't support subdirectories */
-	KASSERT(g1->sv_i.sfi_type == SFS_TYPE_FILE);
+	KASSERT(g1->sv_type == SFS_TYPE_FILE);
 
 	/*
 	 * Link it under the new name.
@@ -1430,8 +1635,8 @@ sfs_rename(struct vnode *d1, const char *n1,
 	}
 
 	/* Increment the link count, and mark inode dirty */
-	g1->sv_i.sfi_linkcount++;
-	g1->sv_dirty = true;
+	g1_inodeptr->sfi_linkcount++;
+	buffer_mark_dirty(g1_inodebuf);
 
 	/* Unlink the old slot */
 	result = sfs_dir_unlink(sv, slot1);
@@ -1443,9 +1648,11 @@ sfs_rename(struct vnode *d1, const char *n1,
 	 * Decrement the link count again, and mark the inode dirty again,
 	 * in case it's been synced behind our back.
 	 */
-	KASSERT(g1->sv_i.sfi_linkcount>0);
-	g1->sv_i.sfi_linkcount--;
-	g1->sv_dirty = true;
+	KASSERT(g1_inodeptr->sfi_linkcount>0);
+	g1_inodeptr->sfi_linkcount--;
+	buffer_mark_dirty(g1_inodebuf);
+	buffer_release(g1_inodebuf);
+	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	/* Let go of the reference to g1 */
 	VOP_DECREF(&g1->sv_v);
@@ -1464,10 +1671,15 @@ sfs_rename(struct vnode *d1, const char *n1,
 			strerror(result2));
 		panic("sfs: rename: Cannot recover\n");
 	}
-	g1->sv_i.sfi_linkcount--;
+	g1_inodeptr->sfi_linkcount--;
+	buffer_mark_dirty(g1_inodebuf);
  puke:
+	buffer_release(g1_inodebuf);
+	unreserve_buffers(4, SFS_BLOCKSIZE);
+
 	/* Let go of the reference to g1 */
 	VOP_DECREF(&g1->sv_v);
+
 	vfs_biglock_release();
 	return result;
 }
@@ -1488,7 +1700,7 @@ sfs_lookparent(struct vnode *v, char *path, struct vnode **ret,
 
 	vfs_biglock_acquire();
 
-	if (sv->sv_i.sfi_type != SFS_TYPE_DIR) {
+	if (sv->sv_type != SFS_TYPE_DIR) {
 		vfs_biglock_release();
 		return ENOTDIR;
 	}
@@ -1511,6 +1723,8 @@ sfs_lookparent(struct vnode *v, char *path, struct vnode **ret,
  *
  * Since we don't support subdirectories, it's easy - just look up the
  * name.
+ *
+ * Requires up to 3 buffers.
  */
 static
 int
@@ -1522,19 +1736,23 @@ sfs_lookup(struct vnode *v, char *path, struct vnode **ret)
 
 	vfs_biglock_acquire();
 
-	if (sv->sv_i.sfi_type != SFS_TYPE_DIR) {
+	if (sv->sv_type != SFS_TYPE_DIR) {
 		vfs_biglock_release();
 		return ENOTDIR;
 	}
 
-	result = sfs_lookonce(sv, path, &final, NULL);
+	reserve_buffers(3, SFS_BLOCKSIZE);
+
+	result = sfs_lookonce(sv, path, &final, NULL, NULL);
 	if (result) {
+		unreserve_buffers(3, SFS_BLOCKSIZE);
 		vfs_biglock_release();
 		return result;
 	}
 
 	*ret = &final->sv_v;
 
+	unreserve_buffers(3, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 	return 0;
 }
@@ -1645,15 +1863,19 @@ static const struct vnode_ops sfs_dirops = {
 /*
  * Function to load a inode into memory as a vnode, or dig up one
  * that's already resident.
+ *
+ * Requires 1 buffer.
  */
 static
 int
 sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
-		 struct sfs_vnode **ret)
+		 struct sfs_vnode **ret, struct buf **ret_inodebuf)
 {
 	struct vnode *v;
 	struct sfs_vnode *sv;
 	const struct vnode_ops *ops = NULL;
+	struct buf *inodebuf;
+	struct sfs_inode *inodeptr;
 	unsigned i, num;
 	int result;
 
@@ -1677,6 +1899,16 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 			/* May only be set when creating new objects */
 			KASSERT(forcetype==SFS_TYPE_INVAL);
 
+			if (ret_inodebuf != NULL) {
+				/* find the inode for the caller */
+				result = buffer_read(&sfs->sfs_absfs, ino,
+						     SFS_BLOCKSIZE, &inodebuf);
+				if (result) {
+					return result;
+				}
+				*ret_inodebuf = inodebuf;
+			}
+
 			VOP_INCREF(&sv->sv_v);
 			*ret = sv;
 			return 0;
@@ -1697,30 +1929,29 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	}
 
 	/* Read the block the inode is in */
-	result = sfs_rblock(sfs, &sv->sv_i, ino);
+	result = buffer_read(&sfs->sfs_absfs, ino, SFS_BLOCKSIZE, &inodebuf);
 	if (result) {
 		kfree(sv);
 		return result;
 	}
-
-	/* Not dirty yet */
-	sv->sv_dirty = false;
+	inodeptr = buffer_map(inodebuf);
 
 	/*
 	 * FORCETYPE is set if we're creating a new file, because the
-	 * block on disk will have been zeroed out and thus the type
+	 * buffer will have been zeroed out already and thus the type
 	 * recorded there will be SFS_TYPE_INVAL.
 	 */
 	if (forcetype != SFS_TYPE_INVAL) {
-		KASSERT(sv->sv_i.sfi_type == SFS_TYPE_INVAL);
-		sv->sv_i.sfi_type = forcetype;
-		sv->sv_dirty = true;
+		KASSERT(inodeptr->sfi_type == SFS_TYPE_INVAL);
+		inodeptr->sfi_type = forcetype;
+		buffer_mark_dirty(inodebuf);
 	}
 
 	/*
-	 * Choose the function table based on the object type.
+	 * Choose the function table based on the object type,
+	 * and cache the type in the vnode.
 	 */
-	switch (sv->sv_i.sfi_type) {
+	switch (inodeptr->sfi_type) {
 	    case SFS_TYPE_FILE:
 		ops = &sfs_fileops;
 		break;
@@ -1730,12 +1961,14 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	    default:
 		panic("sfs: loadvnode: Invalid inode type "
 		      "(inode %u, type %u)\n",
-		      ino, sv->sv_i.sfi_type);
+		      ino, inodeptr->sfi_type);
 	}
+	sv->sv_type = inodeptr->sfi_type;
 
 	/* Call the common vnode initializer */
 	result = VOP_INIT(&sv->sv_v, ops, &sfs->sfs_absfs, sv);
 	if (result) {
+		buffer_release(inodebuf);
 		kfree(sv);
 		return result;
 	}
@@ -1747,11 +1980,20 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	result = vnodearray_add(sfs->sfs_vnodes, &sv->sv_v, NULL);
 	if (result) {
 		VOP_CLEANUP(&sv->sv_v);
+		buffer_release(inodebuf);
 		kfree(sv);
 		return result;
 	}
 
 	/* Hand it back */
+
+	if (ret_inodebuf != NULL) {
+		*ret_inodebuf = inodebuf;
+	}
+	else {
+		buffer_release(inodebuf);
+	}
+
 	*ret = sv;
 	return 0;
 }
@@ -1768,12 +2010,15 @@ sfs_getroot(struct fs *fs)
 	int result;
 
 	vfs_biglock_acquire();
+	reserve_buffers(1, SFS_BLOCKSIZE);
 
-	result = sfs_loadvnode(sfs, SFS_ROOT_LOCATION, SFS_TYPE_INVAL, &sv);
+	result = sfs_loadvnode(sfs, SFS_ROOT_LOCATION, SFS_TYPE_INVAL,
+			       &sv, NULL);
 	if (result) {
 		panic("sfs: getroot: Cannot load root vnode\n");
 	}
 
+	unreserve_buffers(1, SFS_BLOCKSIZE);
 	vfs_biglock_release();
 
 	return &sv->sv_v;

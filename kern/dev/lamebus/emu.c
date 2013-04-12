@@ -1295,6 +1295,11 @@ emufs_addtovfs(struct emu_softc *sc, const char *devname)
 	ef->ef_fs.fs_getvolname = emufs_getvolname;
 	ef->ef_fs.fs_getroot = emufs_getroot;
 	ef->ef_fs.fs_unmount = emufs_unmount;
+
+	/* we don't do block I/O */
+	ef->ef_fs.fs_readblock = NULL;
+	ef->ef_fs.fs_writeblock = NULL;
+
 	ef->ef_fs.fs_data = ef;
 
 	ef->ef_emu = sc;
