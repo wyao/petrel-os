@@ -119,8 +119,11 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
                 if ((int)coremap[ix].as > (int)as)
                     lock_acquire(coremap[ix].as->pt_lock);
             }
-            else 
-                lock_acquire(coremap[ix].as->pt_lock);
+            else {
+                // If not evicting from own addrspace
+                if (!lock_do_i_hold(coremap[ix].as->pt_lock))
+                    lock_acquire(coremap[ix].as->pt_lock);
+            }
 
             ipi_tlbshootdown_wait_all(COREMAP_TO_PADDR(ix));
 
