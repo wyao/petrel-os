@@ -110,15 +110,19 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         if (cme_get_state(ix) != CME_FREE){
             // To avoid deadlock, acquire AS locks in order of raw pointer value
             // If we are evicting our own page, do nothing extra.
-            if ((int)coremap[ix].as < (int)as){
-                lock_release(as->pt_lock);
-                lock_acquire(coremap[ix].as->pt_lock);
-                lock_acquire(as->pt_lock);
+            if (as != NULL){
+                if ((int)coremap[ix].as < (int)as){
+                    lock_release(as->pt_lock);
+                    lock_acquire(coremap[ix].as->pt_lock);
+                    lock_acquire(as->pt_lock);
+                }
+                if ((int)coremap[ix].as > (int)as)
+                    lock_acquire(coremap[ix].as->pt_lock);
             }
-            if ((int)coremap[ix].as > (int)as)
+            else 
                 lock_acquire(coremap[ix].as->pt_lock);
 
-            // SHOOT DOWN ADDRESS ON ALL CPUS
+            ipi_tlbshootdown_wait_all(COREMAP_TO_PADDR(ix));
 
             if (cme_get_state(ix) == CME_DIRTY)
                 swapout(COREMAP_TO_PADDR(ix));
@@ -619,22 +623,5 @@ void vm_tlbshootdown(const struct tlbshootdown *ts){
         V(sem);
 
     splx(spl);
-}
-
-/*
- * Sets up tlbshootdown struct and permforms a shootdown synchronized by the semaphore
- * Handles allocation and destruction of the semaphore
- */
-void ipi_tlbshootdown_wait(struct cpu *target, uint32_t ppn){
-    struct tlbshootdown ts;
-    struct semaphore *s = sem_create("wait on",0);
-
-    ts.done_handling = s;
-    ts.ppn = ppn;
-
-    ipi_tlbshootdown(target,&ts);
-    P(s); // Only V-ed upon completion of shootdown
-
-    sem_destroy(s);
 }
 
