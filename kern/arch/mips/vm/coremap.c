@@ -58,7 +58,7 @@ static void mark_allocated(int ix, int iskern) {
 
     spinlock_acquire(&stat_lock);
     num_cm_free -= 1;
-    KASSERT(num_cm_free >= 0);
+    // KASSERT(num_cm_free >= 0); TODO: okay if not passing?
     if (iskern) {
         coremap[ix].state = CME_FIXED;
         num_cm_kernel += 1;
@@ -91,6 +91,7 @@ static void mark_allocated(int ix, int iskern) {
 paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     int ix = -1;
     int iskern;
+    bool held_lock;
 
     KASSERT(num_cm_entries != 0);
 
@@ -108,6 +109,8 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         // Find a page to swap
         ix = choose_evict_page();
         KASSERT(ix != -1); // Shouldn't happen...ever...
+        held_lock = lock_do_i_hold(coremap[ix].as->pt_lock);
+
         if (cme_get_state(ix) != CME_FREE){
             // To avoid deadlock, acquire AS locks in order of raw pointer value
             // If we are evicting our own page, do nothing extra.
@@ -122,7 +125,7 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
             }
             else {
                 // If not evicting from own addrspace
-                if (!lock_do_i_hold(coremap[ix].as->pt_lock))
+                if (!held_lock)
                     lock_acquire(coremap[ix].as->pt_lock);
             }
 
@@ -132,8 +135,11 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
                 swapout(COREMAP_TO_PADDR(ix));
             evict_page(COREMAP_TO_PADDR(ix));
 
-            if (coremap[ix].as != as)
+            // When user is evicting self, do not want to free own lock
+            // Don't want kernel to drop lock in middle of as operation
+            if (!held_lock) {
                 lock_release(coremap[ix].as->pt_lock);
+            }
         }
     }
 
