@@ -237,31 +237,30 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				curr_new = &new->page_table[i][j];
 				// If the entry exists (ie, page is in memory or swap space)
 				if (pte_get_exists(curr_old)){
+					int offset = swapfile_reserve_index();  // Location where we will copy the page to
 					// Page is in memory
 					if (pte_get_present(curr_old)){
 						paddr_t base_old = (pte_get_location(curr_old) << 12);
-						paddr_t base_new = alloc_one_page(new,PT_TO_VADDR(i,j));
-						// CONVERT TO KERNEL PTR AND MEMCPY
 						void *src = (void *)PADDR_TO_KVADDR(base_old);
-						void *dest = (void *)PADDR_TO_KVADDR(base_new);
-						memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
 
-						cme_set_offset(cm_get_index(base_new),swapfile_reserve_index());
+						int ret = write_page(src,offset);
+						KASSERT(ret == 0);
 
-						// Set new page table entry to a valid mapping to new location with same permissions
-						int perm = pte_get_permissions(&old->page_table[i][j]);
-						pt_update(new,PT_TO_VADDR(i,j),base_new>>12,perm,1);
-
-						// Unbusy the coremap entry for both new and old page
-						cme_set_busy(cm_get_index(base_old),0);
-						cme_set_busy(cm_get_index(base_new),0);
+						cme_set_busy(cm_get_index(base_old),0);						
 					}
 					// Page is in swap space (TODO - for now treats it as if it didn't exist)
 					else{
-						// Find a disk space for the page
-						// Copy the page to disk with VOP_WRITE
-						// Write disk location to pte and mark not present
+						void *dest = kmalloc(PAGE_SIZE);
+						int ret = read_page(dest,pte_get_location(curr_old));
+						KASSERT(ret == 0);
+
+						ret = write_page(dest,offset);
+						KASSERT(ret == 0);
+						kfree(dest);
 					}
+
+					int perm = pte_get_permissions(&old->page_table[i][j]);
+					pt_update(new,PT_TO_VADDR(i,j),offset,perm,0);
 				}
 			}
 		}

@@ -496,7 +496,7 @@ int swapout(paddr_t ppn){
     KASSERT(coremap[i].disk_offset != -1);
     KASSERT(coremap[i].state == CME_DIRTY);
     
-    int ret = write_page(ppn,coremap[i].disk_offset);
+    int ret = write_page((void *)PADDR_TO_KVADDR(ppn),coremap[i].disk_offset);
     if (!ret)
         cme_set_state(i,CME_CLEAN);
     return ret;
@@ -513,13 +513,14 @@ int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest){
     unsigned offset;
 
     KASSERT(as != NULL);
+    KASSERT(PADDR_IS_VALID(dest));
 
     struct pt_ent *pte = get_pt_entry(as,vpn);
     KASSERT(pte != NULL && pte_get_exists(pte));
     KASSERT(!pte_get_present(pte));
 
     offset = pte_get_location(pte);
-    ret = read_page(dest,offset);
+    ret = read_page((void *)PADDR_TO_KVADDR(dest),offset);
 
     if (!ret){
         idx = PADDR_TO_COREMAP(dest);
@@ -556,26 +557,22 @@ void evict_page(paddr_t ppn){
     cme_set_state(i,CME_FREE);
 }
 
-int write_page(paddr_t ppn, unsigned offset){
-    KASSERT(PADDR_IS_VALID(ppn));
+int write_page(void *page, unsigned offset){
     // TODO: Assert offset is not off disk
 
-    void *src = (void *)PADDR_TO_KVADDR(ppn);
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, src, PAGE_SIZE, offset*PAGE_SIZE, UIO_WRITE);
+    uio_kinit(&iov, &u, page, PAGE_SIZE, offset*PAGE_SIZE, UIO_WRITE);
 
     return VOP_WRITE(swapfile,&u);
 }
 
-int read_page(paddr_t ppn, unsigned offset){
-   KASSERT(PADDR_IS_VALID(ppn));
+int read_page(void *page, unsigned offset){
     // TODO: Assert offset is not off disk
 
-    void *src = (void *)PADDR_TO_KVADDR(ppn);
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, src, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
+    uio_kinit(&iov, &u, page, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
 
     return VOP_READ(swapfile,&u);
 }
