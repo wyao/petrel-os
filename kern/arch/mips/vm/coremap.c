@@ -533,9 +533,10 @@ int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest){
         coremap[idx].disk_offset = offset;
         coremap[idx].vaddr_base = vpn;
         coremap[idx].as = as;
+        coremap[idx].state = CME_CLEAN;
 
         pte_set_present(pte,1);
-        pte_set_location(pte,dest);
+        pte_set_location(pte,dest>>12);
     }
 
     return ret;
@@ -568,7 +569,7 @@ int write_page(void *page, unsigned offset){
 
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, page, PAGE_SIZE, offset*PAGE_SIZE, UIO_WRITE);
+    uio_kinit(&iov, &u, (char *)page, PAGE_SIZE, offset*PAGE_SIZE, UIO_WRITE);
 
     return VOP_WRITE(swapfile,&u);
 }
@@ -578,7 +579,7 @@ int read_page(void *page, unsigned offset){
 
     struct iovec iov;
     struct uio u;
-    uio_kinit(&iov, &u, page, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
+    uio_kinit(&iov, &u, (char *)page, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
 
     return VOP_READ(swapfile,&u);
 }
