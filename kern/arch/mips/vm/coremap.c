@@ -270,6 +270,21 @@ int choose_evict_page(void){
     return -1; //Control should never reach here...
 }
 
+
+/*
+ * Busy-waits until all pages for an AS are pinned
+ */
+void pin_all_pages(struct addrspace *as){
+    int i; 
+    for (i=0; i<num_cm_entries; i++){
+        if (coremap[i].as == as){
+            while (!cme_try_pin(i)){
+                ;
+            }
+        }
+    }
+}
+
 /* 
  * Coremap accessor/setter methods 
  */

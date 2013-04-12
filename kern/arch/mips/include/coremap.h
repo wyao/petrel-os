@@ -45,6 +45,7 @@ void free_coremap_page(paddr_t pa, bool iskern);
 void free_kpages(vaddr_t va);
 int find_free_page(void);
 int choose_evict_page(void);
+void pin_all_pages(struct addrspace *as);
 
 /*
  * Acessor/setter methods
