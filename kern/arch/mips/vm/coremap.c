@@ -213,12 +213,13 @@ void free_coremap_page(paddr_t pa, bool iskern) {
 
         // Free swap space
         KASSERT(coremap[ix].disk_offset != -1);
+        KASSERT(coremap[ix].vaddr_base != 0);
+
         swapfile_free_index(coremap[ix].disk_offset);
         coremap[ix].disk_offset = -1;
-
-        KASSERT(coremap[ix].vaddr_base != 0);
         coremap[ix].vaddr_base = 0;
         coremap[ix].use_bit = 0;
+
         spinlock_acquire(&stat_lock);
         num_cm_user--;
     }
@@ -531,7 +532,7 @@ int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest){
     if (!ret){
         idx = PADDR_TO_COREMAP(dest);
         coremap[idx].disk_offset = offset;
-        coremap[idx].vaddr_base = vpn;
+        coremap[idx].vaddr_base = vpn>>12;
         coremap[idx].as = as;
         coremap[idx].state = CME_CLEAN;
 
