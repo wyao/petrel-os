@@ -258,10 +258,10 @@ int choose_evict_page(void){
                 else //if tlb_probe_all(page i) TODO
                     return clock_hand;
             }
-            clock_hand++;
-            if (clock_hand >= (int)num_cm_entries)
-                clock_hand = 0;
         }
+        clock_hand++;
+        if (clock_hand >= (int)num_cm_entries)
+            clock_hand = 0;
     }
     return -1; //Control should never reach here...
 }
