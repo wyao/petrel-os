@@ -109,11 +109,12 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         // Find a page to swap
         ix = choose_evict_page();
         KASSERT(ix != -1); // Shouldn't happen...ever...
-        held_lock = lock_do_i_hold(coremap[ix].as->pt_lock);
 
         if (cme_get_state(ix) != CME_FREE){
             // To avoid deadlock, acquire AS locks in order of raw pointer value
             // If we are evicting our own page, do nothing extra.
+            held_lock = lock_do_i_hold(coremap[ix].as->pt_lock);
+
             if (as != NULL){
                 if ((int)coremap[ix].as < (int)as){
                     lock_release(as->pt_lock);
