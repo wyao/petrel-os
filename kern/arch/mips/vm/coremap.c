@@ -129,8 +129,13 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
                 if (!held_lock)
                     lock_acquire(coremap[ix].as->pt_lock);
             }
-
+            // Shoot down other CPUs
             ipi_tlbshootdown_wait_all(COREMAP_TO_PADDR(ix));
+            struct tlbshootdown ts;
+            ts.ppn = COREMAP_TO_PADDR(ix);
+            ts.done_handling = NULL;
+            // Then shoot down our own CPU
+            vm_tlbshootdown(&ts);
 
             if (cme_get_state(ix) == CME_DIRTY)
                 swapout(COREMAP_TO_PADDR(ix));
@@ -139,6 +144,7 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
             // When user is evicting self, do not want to free own lock
             // Don't want kernel to drop lock in middle of as operation
             if (!held_lock) {
+                KASSERT(coremap[ix].as != NULL);
                 lock_release(coremap[ix].as->pt_lock);
             }
         }
@@ -506,7 +512,7 @@ int swapout(paddr_t ppn){
     int i = PADDR_TO_COREMAP(ppn);
     KASSERT(coremap[i].disk_offset != -1);
     KASSERT(coremap[i].state == CME_DIRTY);
-    
+
     int ret = write_page((void *)PADDR_TO_KVADDR(ppn),coremap[i].disk_offset);
     if (!ret)
         cme_set_state(i,CME_CLEAN);
@@ -524,6 +530,7 @@ int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest){
     unsigned offset;
 
     KASSERT(as != NULL);
+    KASSERT(lock_do_i_hold(as->pt_lock));
     KASSERT(PADDR_IS_VALID(dest));
 
     struct pt_ent *pte = get_pt_entry(as,vpn);

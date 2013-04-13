@@ -139,9 +139,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		return EFAULT;
 
 	// Validate faultaddress
-	if (faultaddress == 0) {
-		return EFAULT;
-	}
 	if (faultaddress >= as->heap_start && faultaddress <= as->heap_end) {
 		valid = true; // In heap
 	}
@@ -170,7 +167,6 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		paddr_t pa = (pte_get_location(pte)<<12);
 
 		cme_set_state(cm_get_index(pa),CME_DIRTY);
-		//V(dirty_pages); // Signal cleaner thread to run.  TODO: should it run on sleep timer instead?
 
 		elo = (pa & TLBLO_PPAGE) | TLBLO_DIRTY | TLBLO_VALID;
 		ehi = faultaddress & TLBHI_VPAGE;
@@ -184,7 +180,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		else {
 			tlb_write(ehi, elo, tlbindex);
 		}
-
+		cme_set_use(cm_get_index(pa), 1);
 		splx(spl);
 
 		return 0;
@@ -233,6 +229,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 			spl = splhigh();
 			tlb_random(ehi, elo);
+			cme_set_use(cm_get_index(pa), 1);
 			splx(spl);
 		}
 		else {
