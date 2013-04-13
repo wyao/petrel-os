@@ -567,9 +567,6 @@ void evict_page(paddr_t ppn){
     pte_set_present(pte,0);
     pte_set_location(pte,coremap[i].disk_offset);
 
-    coremap[i].as = NULL;
-    coremap[i].disk_offset = -1;
-
     cme_set_state(i,CME_FREE);
 }
 
