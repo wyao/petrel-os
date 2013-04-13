@@ -261,6 +261,7 @@ int find_free_page(void){
  * Intervening pages are marked unused.
  */
 int choose_evict_page(void){
+    int ret;
     while(1){
         if (cme_get_state(clock_hand) != CME_FIXED){
             if (cme_try_pin(clock_hand)){
@@ -269,14 +270,14 @@ int choose_evict_page(void){
                     cme_set_busy(clock_hand,0);
                 }
                 else {
-                    clock_hand++;
-                    return clock_hand-1;
+                    ret = clock_hand;
+                    clock_hand = (clock_hand + 1) % num_cm_entries;
+                    return ret;
                 }
             }
         }
         clock_hand++;
-        if (clock_hand >= (int)num_cm_entries)
-            clock_hand = 0;
+        clock_hand = clock_hand % num_cm_entries;
     }
     return -1; //Control should never reach here...
 }
