@@ -268,8 +268,10 @@ int choose_evict_page(void){
                     cme_set_use(clock_hand,0);
                     cme_set_busy(clock_hand,0);
                 }
-                else //if tlb_probe_all(page i) TODO
-                    return clock_hand;
+                else {
+                    clock_hand++;
+                    return clock_hand-1;
+                }
             }
         }
         clock_hand++;
@@ -563,6 +565,10 @@ void evict_page(paddr_t ppn){
 
     pte_set_present(pte,0);
     pte_set_location(pte,coremap[i].disk_offset);
+
+    coremap[i].as = NULL;
+    coremap[i].disk_offset = -1;
+
     cme_set_state(i,CME_FREE);
 }
 
