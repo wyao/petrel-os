@@ -1,0 +1,412 @@
+<style>
+body {
+    line-height: 1.4em;
+    color: black;
+        padding:1em;
+        margin:auto;
+        max-width:42em;
+}
+
+li {
+    color: black;
+}
+
+h1,
+h2, 
+h3, 
+h4, 
+h5, 
+h6 {
+    border: 0 none !important;
+}
+
+h1 {    
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    border-bottom: 2px solid #000080 !important;
+}
+
+h2 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;    
+    border-bottom: 2px solid #000080 !important;    
+}
+
+pre {
+    background-color: #f8f8f8;    
+    border: 1px solid #2f6fab;
+    border-radius: 3px;
+    overflow: auto;
+    padding: 5px;
+}
+
+pre code {
+    background-color: inherit;
+    border: none;    
+    padding: 0;
+}
+
+code {
+    background-color: #ffffe0;
+    border: 1px solid orange;
+    border-radius: 3px;
+    padding: 0 0.2em;
+}
+
+a {
+    text-decoration: underline; 
+}
+
+ul, ol {
+    padding-left: 30px;
+}
+
+li {
+    margin: 0.2em 0 0 0em; padding: 0px;
+}
+
+em {
+    color: #b05000;
+}
+
+table.text th, table.text td {
+    vertical-align: top;
+    border-top: 1px solid #ccc;
+    padding:5px;
+}
+</style>
+
+
+
+<h1>Assignment 2 Write Up</h1>
+
+<h3>Aidan &amp; Willie: White-Faced Storm Petrel-OS</h3>
+
+<h1>Table of Contents</h1>
+
+<ol>
+<li>Topics
+<ol><li>Data Structures
+<ol><li>Page Table Entries</li>
+<li>Core Map Entries</li>
+<li>Drawbacks</li></ol></li>
+<li>TLB Design</li>
+<li>Paging
+<ol><li>Eviction (With LRU Clock)</li>
+<li>Swap Space</li>
+<li>Page Fault Handling &amp; Synchronization</li></ol></li>
+<li>sbrk()</li></ol></li>
+<li>Question Responses
+<ol><li>TLB Questions</li>
+<li>Malloc Questions</li>
+<li>TLB and Paging Algorithms</li></ol></li>
+<li>Analysis of Performance</li>
+<li>Integration Plan</li>
+<li>Plan of Action</li>
+</ol>
+
+<h1>Topics</h1>
+
+<h2>Data Structures</h2>
+
+<p>We will implement both the global core map and the per-process page tables as chained hash tables.  We believe this effectively balances the desire to avoid linear access time with the desire to maintain a manageable size.  The extreme for size conservation would be a simple linked list, which would only be as large as the number of pages (virtual in the case of page tables and physical in the case of the core map) in use, but has linear access time.  The extreme for access time would be a one-to-one hash table or a linked list with an indexing array, which would both give constant access but demand much upfront allocation.  Our compromise would have a hash table of size approximating the number of pages in use on average whose entries look as follows:</p>
+
+<pre><code>struct table_entry {
+    int page_number;
+    struct *table_entry next;
+    void *data;
+}
+</code></pre>
+
+<p>Thus, page table entries and core map entries are only differentiated by 1) the type of page number stored as the identifier, and 2) the contents of the data block.</p>
+
+<h3>Page Table Entries</h3>
+
+<p>We will modify our addrspace structures to contain a <code>table_entry</code> struct with a <code>page_table_entry</code> as its data block.  This means each thread will still contain a single page table, but we can abstract away the initialization, destruction, and copying out to the addrspace methods.  We will additionally add a lock on the page table in the process struct, and require that any updates to the TLB or the process table be done while holding this lock:</p>
+
+<pre><code>struct lock *pt_lock
+</code></pre>
+
+<p>The data block for the page table entry will contain the following fields:</p>
+
+<pre><code>struct pt_entry {
+    paddr_t phys_page;
+    off_t disk_offset;
+}
+</code></pre>
+
+<p>Where the first 20 bits of the phys_page are the page number, the last two bits are the dirty and valid bit respectively, and the intervening bits are the protections.</p>
+
+<p>The protections field tracks if the page is readable/writeable, which is important for throwing <code>VM_FAULT_READONLY</code>.  The dirty bit will need to be stored at the page table as well as the TLB since a dedicated pager thread will be reading over pages to write to disk even when they are not in the TLB.  The physical page number is the base physical page to which the offset from the virtual address will be added.  <code>disk_offset</code> is the offset onto disk at which the page resides in memory, so if there is a page fault the OS knows where to place/retrieve it.</p>
+
+<h3>Core Map Entries</h3>
+
+<p>The core map entry will contain the following fields:</p>
+
+<pre><code>struct cm_entry {
+    bool use_bit;
+    struct process_list refs;
+    pid_t pid;
+    int vpn;
+}
+</code></pre>
+
+<p>The <code>use_bit</code> in the <code>core_map_entry</code> is for our eviction policy, which will be implemented as an LRU clock, requiring each allocated physical page to track an extra bit. </p>
+
+<p>The core map entries contain a pair of pid/vpn to keep track of which processes reference this page of memory.  This is useful for finding free blocks and updating the page table of the referencing process.  We have chosen not to allow multiple processes to share physical pages as a simplifying step, though this would simply require a linked list of pid/vpn pairs and more lock acquisitions during eviction.</p>
+
+<h3>Drawbacks</h3>
+
+<p>The chained hash has worst-case linear lookup time, so the size of the hash table and the choice of hash function will be very important for performance.</p>
+
+<p>While the chained hash may save size in the number of entries allocated it does require two new fields, the identifier and the "next" pointer, one or both of which would not be required for an array or linked list implementation. </p>
+
+<h2>TLB Design</h2>
+
+<p>A random TLB replacement policy is chosen as most policies end up fairly close to random anyway and it is more important to have a robust implementation first before optimizing. To evict a random TLB entry, use a combination of <code>tlb_write()</code> and <code>random()</code> (since <code>tlb_random()</code> reserves 8 of the TLB entries). On every context switch, clear the entire TLB instead of making use of the address space ids to adhere to Margo's Mantra as is already done with <code>as_activate()</code>.</p>
+
+<p>To implement TLB handling, modify <code>vm_fault()</code>, the function called on TLB exceptions (see trap.c). Note that the <code>TLBLO_DIRTY</code> bit in the TLB is actually a write privilege bit, not ever set by the processor. If set, writes are permitted, else <code>EX_MOD</code> exception is raised when a write is attempted. Load all entries into the TLB without setting the <code>TLBLO_DIRTY</code> bit. Two scenarios are possible if a write happens to a page referenced by a TLB entry:</p>
+
+<ol>
+<li>If the <code>TLBLO_DIRTY</code> is not set, then an <code>EX_MOD</code> exception is raised. Handle this <code>VM_FAULT_READONLY</code> exception in <code>vm_fault()</code> by setting <code>TLBLO_DIRTY</code> and marking the corresponding page dirty. </li>
+<li>If the <code>TLBLO_DIRTY</code> is set, this means that the page has already been marked dirty and no exception is raised.</li>
+</ol>
+
+<p>The <code>TLBLO_DIRTY</code> bit needs to be unset any time we wish to mark a dirty page clean (after writing it to disk for instance).</p>
+
+<p>In general, <code>vm_fault()</code> will handle perform the same error checking that it already does from the distribution code when handling <code>VM_FAULT_READ</code> and <code>VM_FAULT_WRITE</code>, but it will also:
+1.  Attempt to find the physical address via the page table (after first acquiring the page table lock)
+2.  If unsuccessful, load the appropriate page into the page table via a "page fault". Note that this is in quotes since we are already in the kernel and don't need an actual fault to trap the code. The details of this is covered in the section on page faults.
+3.  Create the TLB entry and load it into the TLB. Evict randomly if necessary.
+4.  Restart at fault address and return to usermode</p>
+
+<p>Note that because the TLB is simply a cache and <code>tlb_read()</code> waits 2 cycles to ensure that entryhi/lo are both set, turning interrupts off is a sufficient synchronization for accessing the TLB.</p>
+
+<h2>Paging</h2>
+
+<h3>Eviction (With LRU Clock)</h3>
+
+<p>We employ a per-page "busy bit" to synchronize access.  The advantages are twofold: firstly, a per-page lock is very space intensive, and second, when choosing a page to evict we do not want to block waiting.  If we check business (i.e., being in the process of eviction) by acquiring a global lock, testing and setting if 0, then releasing the lock, we will never block while maintaining mutual exclusion. </p>
+
+<pre><code>struct lock *busy_lock;
+struct bitmap busy_bits[num_ppages];
+</code></pre>
+
+<p>We will be implementing an LRU clock to determine pages to evict.  When a page fault happens and there is no space in physical memory, a global "clock" will iterate cyclically through the rage of physical pages available to the user until one is found with either no <code>core_map_entry</code> (unused) or the "<code>busy_bit</code>" and "<code>use_bit</code>" of its <code>core_map_entry</code> set to 0, setting all intervening ones to 0 along the way, then return the physical page number to evict.  To do this, we will declare a global "hand" that indexes physical page numbers starting at 0:</p>
+
+<pre><code>int clock_hand;
+static int choose_evict();
+</code></pre>
+
+<p>While this incurs a time complexity penalty over a random eviction policy (worst case linear in the number of physical pages, assuming constant lookup, which with a chained hash table implementation of the core map would make it worse-worse case quadratic...) we believe this would save us time in the long run as disk operations are extremely expensive and LRU has better locality guarantees.</p>
+
+<p>The setting of the "<code>use_bit</code>" is a bit tricky. It is unreasonable to set the use bit on every memory access. In fact, the use bit can only be set during a TLB fault. We could just accept that use bits are only set during TLB faults. Another possible way to ensure that use bits that are cleared get set again is to forcibly probe and remove an address from the TLB whenever its use bit is cleared. However this seems expensive (and unnecessary?), so the compromise that we will pursue is to probe the TLB to see if the virtual address is there and only evict if both the use bit is not set and it is not in the TLB. Note that these are parameters (or more accurately modified algorithms) that we will be trying out. This is further discussed in the Analysis of Performance section.</p>
+
+<h3>Swap Space</h3>
+
+<p>A global bitmap will be employed to keep track of free disk space.   Operations on the bitmap (<code>bitmap_alloc</code>, <code>bitmap_mark</code>, <code>bitmap_unmark</code>) will be controlled by a spinlock.  These will be declared in vm.c.</p>
+
+<pre><code>struct bitmap *disk_map;
+struct lock *disk_map_lock;
+</code></pre>
+
+<p>The bitmap will be of size at least kuseg/pagesize. When a page is created, it will be assigned a space on the disk by a call to <code>bitmap_alloc</code>, which will find an unused slot of the disk, mark the space occupied, then return the index.  This index will be saved in the <code>core_map_entry</code> corresponding to the physical page, and will be used as the offset for <code>VOP_READ</code> and <code>VOP_WRITE</code> operations to move the page into/out of swap space.</p>
+
+<h3>Page Fault Handling &amp; Synchronization</h3>
+
+<p>Page faults will be handled in the following fashion:</p>
+
+<p>Note: Because we can only trigger a page fault after a TLB miss, we will begin our fault handler holding the lock on our own page table.</p>
+
+<h4>Page not present</h4>
+
+<ul>
+<li>Pick a page by the LRU clock. Then acquire the global "<code>busy_lock</code>", and if the busy bit is not set, set it, release the lock and return the index.  This guarantees that we acquire a page that is not in the middle of being evicted by another process.</li>
+<li>If the chosen page P is unmapped, simply update our own page table, and add an entry to the core map linking P to the faulting address in the current process.  Then acquire the <code>busy_lock</code>, free the busy bit, release the <code>busy_lock</code> and the current process' <code>pt_lock</code> and restart the instruction.</li>
+<li>If the chosen page P is mapped, then we will have to evict it and update the referencing page table.  To avoid deadlock (where A tries to acquire B's lock while holding its own and visa versa) we will release our own <code>pt_lock</code> and reacquire it and the <code>pt_lock</code> of the process from P's core map entry in the order of pid (let's call this process B).</li>
+<li>If P is not dirty, then there exists some copy of it in backing store and we don't have to write it to disk.  Thus, we simply find the <code>pt_ent</code> for P in B's page table and set the valid bit of the <code>ppage</code> field to 0.</li>
+<li>If P is dirty, we must first write it to disk at the offset specified by the <code>disk_offset</code> field of B's page table entry for P, then set the valid bit of the <code>ppage</code> field to 0.</li>
+<li>At this point, we have guaranteed that the page table entry in B is invalidated for P, but it might yet reside in the TLB.  Since we want to prevent all accesses to P while we evict it, we will execute a <code>tlb_shootdown(P)</code> to remove any entries for P from all TLBs.  Since this functionality for shootdown of a specific entry is not yet implemented, we will have to do so, employing an interprocessor interrupt.</li>
+<li>This completes the eviction of P, so we can now read the page located by the <code>disk_offset</code> field of our page table entry into P.  We then update our <code>pt_ent</code> for the faulting address to be marked valid (by flipping the "valid" bit of <code>ppage</code>).</li>
+<li>We now update the core map entry for P to contain the pid/vpn pair of the current process/faulting page.  Since we still hold the busy bit for this page, we do not need to synchronize this update further.</li>
+<li>Finally, release the busy bit (wrapped by acquiring/releasing <code>busy_lock</code>), the two <code>pt_lock</code>s, and restart the instruction.</li>
+</ul>
+
+<h4>Page DNE/First Attempt to Write</h4>
+
+<p>If the page is being accessed for the first time (i.e., it does not have swap space), then we will have to modify the above handler in two ways:</p>
+
+<ul>
+<li>Instead of reading a page from disk into the chosen location P, we simply zero the memory at P so we can't access someone else's page</li>
+<li>Instead of updating the page table entry, we will first have to create one.  For this, we will have to acquire <code>disk_map_lock</code>, call <code>bitmap_alloc(disk_map)</code> to obtain an offset into swap space.</li>
+</ul>
+
+<h2>sbrk()</h2>
+
+<pre><code>static size_t sbrk_region_size
+static vaddress_t current_break;
+
+sbrk(size){
+    // Do initialization the first time if necessary?
+
+    if (size &lt;= 0)
+        return(current_break);
+    current_break += size;
+    sbrk_region_size -= size;
+    if (sbrk_region_size &lt; 0)
+        return -1;
+    return(current_break - size);
+}
+</code></pre>
+
+<h1>Question Responses</h1>
+
+<h2>TLB Questions</h2>
+
+<h3>Problem 1 (5 points)</h3>
+
+<p>Assuming that a user program just accessed a piece of data at (virtual) address X, describe the conditions under which each of the following can arise. If the situation cannot happen, answer "impossible" and explain why it cannot occur.</p>
+
+<ul>
+<li>TLB miss, page fault - the user references a page that is on disk or has not yet been created</li>
+<li>TLB miss, no page fault - the user references a page that was evicted from the TLB but still resides (ie., has not been written to swap space)</li>
+<li>TLB hit, page fault - impossible; pages with TLB entries are always in physical memory.  When a page is written to disk, the TLB should be updated to reflect this</li>
+<li>TLB hit, no page fault - the user references a page that is still in the TLB, and, if their eviction policy is good, that they have recently referenced</li>
+</ul>
+
+<h3>Problem 2 (2 points)</h3>
+
+<p>A friend of yours who foolishly decided not to take 161, but who likes OS/161, implemented a TLB that has room for only one entry, and experienced a bug that caused a user-level instruction to generate a TLB fault infinitely: the instruction never completed executing! Explain how this could happen. (Note that after OS/161 handles an exception, it restarts the instruction that caused the exception.)</p>
+
+<p>On the first access of some memory address by the user there will be a TLB miss as the user has not accessed it yet.  After this, the TLB will evict its only entry, which was presumably the code segment the user was executing.  When the user tries to resume execution of the code, they will get another TLB miss and evict the entry again.  This will repeat from the beginning infinitely.</p>
+
+<h3>Problem 3 (3 points)</h3>
+
+<p>How many memory-related exceptions (i.e., hardware exceptions and other software exceptional conditions) can the following MIPS-like instruction raise? Explain the cause of each exception.
+    # load word from $0 (zero register), offset 0x120, into register $3
+    lw  $3, 0x0120($0)</p>
+
+<ul>
+<li>TLB miss - The address 0x0120 is not in the TLB</li>
+<li>Page fault - The address 0x0120 is not in the page table</li>
+<li>Addressing error (invalid address) - The address 0x0120 is invalid/not accessible</li>
+</ul>
+
+<h2>Malloc Questions</h2>
+
+<h3>Question 1.</h3>
+
+<p>How many times does the system call <code>sbrk()</code> get called from within <code>malloc()</code>?</p>
+
+<p>There are up to two <code>sbrk()</code> calls during the one time initialization (if <code>__heapbase</code> == 0), once to find the base of the heap and once to align the heap base if necessary. In subsequent calls to <code>malloc()</code>, <code>sbrk()</code> is only called If nothing was found to expand the heap inside call to <code>__malloc_sbrk()</code>.</p>
+
+<p>On the i386 platform, what is the numeric value of (finish - start)?</p>
+
+<p>The relevant piece of code is that the heap is expanded with:</p>
+
+<pre><code>mh = __malloc_sbrk(size + MBLOCKSIZE)
+</code></pre>
+
+<p>Here the size is 16 (after alignment) and <code>MBLOCKSIZE</code> is defined to be 8, so the program break is incremented in increments of 24 bytes. Since there are 10 iterations, finish-start = 24*10 = 240</p>
+
+<h3>Question 2.</h3>
+
+<p>Again on the i386, would <code>malloc()</code> call <code>sbrk()</code> when doing that last allocation at the marked line above? What can you say about x?</p>
+
+<p>No, <code>malloc()</code> would not need to call <code>sbrk()</code> to expand the heap even though <code>free()</code> only tries to merge adjacent blocks. <code>free()</code> will merge the 6 freed blocks into 2 sets of 3 * 24 = 72 byte blocks. The block size necessary for <code>malloc(60)</code> after alignment is 64 + 8 = 72, just the right size.</p>
+
+<pre><code>x = start + 24 (the location of res[1])
+</code></pre>
+
+<h3>Question 3.</h3>
+
+<p>It is conventional for libc internal functions and variables to be prefaced with "<code>__</code>". Why do you think this is so?</p>
+
+<p>They are identifiers reserved to the implementation for future extensions to the C language or POSIX.</p>
+
+<h3>Question 4.</h3>
+
+<p>The man page for malloc requires that "the pointer returned must be suitably aligned for use with any data type." How does our implementation of malloc guarantee this?</p>
+
+<pre><code>/* Round size up to an integral number of blocks. */
+size = ((size + MBLOCKSIZE - 1) &amp; ~(size_t)(MBLOCKSIZE-1));
+</code></pre>
+
+<h2>TLB and Paging Algorithms</h2>
+
+<p>Question: How will you structure your code (where will you place your TLB and paging algorithms) so that others can be added trivially, and switching between them only requires reconfiguring your kernel?</p>
+
+<p>See Integration Plan section below.</p>
+
+<h1>Analysis of Performance</h1>
+
+<p>Our TLB eviction policy is random, which should perform fairly well given a large enough TLB without having any performance/memory overhead of having to maintain stats necessary for more complex eviction policy. Additionally, random should guard against antagonistic memory access patterns well as there is no particular access pattern that is guaranteed to cause thrashing.</p>
+
+<p>Our page eviction policy attempts at using a LRU clock, but because we can't trap on every single memory access, the use bit is only marked when the access incurs a TLB fault, so it is unclear how good of an estimate for LRU this really is.</p>
+
+<p>We will maintain the following useful statistics most of which (except the last 2) can be found by simply counting the entries in the coremap:</p>
+
+<ul>
+<li>Total number of pages available</li>
+<li>Total number of pages managed by you</li>
+<li>Number of clean pages</li>
+<li>Number of dirty pages</li>
+<li>Number of kernel pages</li>
+<li>Number of TLB evictions</li>
+<li>Number of page evictions</li>
+</ul>
+
+<p>Using these statistics we can tune the following parameters:</p>
+
+<ul>
+<li>The size of our hash table (which will be the average number of virtual/physical pages)</li>
+<li>Tune the policy for page eviction:
+<ol><li>Accept that use bits of the LRU clock is updated only during TLB faults</li>
+<li>Forcibly evict pages from the TLB when clearing the used bits to make the LRU clock more accurate</li>
+<li>Probe the TLB to see if the virtual address is there and only evict if both the use bit is not set and it is not in the TLB.</li></ol></li>
+</ul>
+
+<h1>Integration Plan</h1>
+
+<p>Since the coremap is a global data structure, it should be declared in vm.h and initialized in <code>vm_bootstrap()</code></p>
+
+<p><code>vm_boostrap()</code> will be responsible for initializing the following global structures with <code>ram_stealmem()</code>, as <code>kmalloc()</code> is unavailable until the bootstrapping is complete:</p>
+
+<pre><code>struct table_entry *core_map;
+struct bitmap *disk_map;
+struct bitmap *busy_bits;
+struct lock *disk_map_lock;
+struct lock *busy_lock;
+</code></pre>
+
+<p>We will additionally have to modify <code>as_create()</code> and <code>as_destroy()</code> to initialize/deconstruct the per-process page table and page table lock:</p>
+
+<pre><code>struct table_entry *page_table;
+struct lock *pt_lock;
+</code></pre>
+
+<p>Because we are enforcing that a physical page can belong to only one process (and as such we only need one pid/vpn per <code>core_map</code>), we have to handle this in <code>as_copy()</code>.  <code>as_copy()</code> will have to go through each page in the page table and find a new place in physical memory for it.  Since much of this is already implemented in our page fault handler, we will abstract out the following function in vm.c:</p>
+
+<pre><code>static void load_page(struct addrspace *as, int vpn)
+</code></pre>
+
+<p>That will find a location, perform eviction, and load the page from swap space or zero it out if it hasn't been referenced yet.  <code>as_copy</code> will additionally have to copy the added structures - the page table and the <code>pt_lock()</code> among others.</p>
+
+<h1>Plan of Action</h1>
+
+<ul>
+<li>Sun: Data Structures</li>
+<li>Mon (1st): Set up tools for debugging/performance analysis</li>
+<li>Tues: TLB</li>
+<li>Weds: TLB</li>
+<li>Thurs: srbk &amp; TLB testing</li>
+<li>Fri: Start paging</li>
+<li>Sat (6th): Paging focusing on bootstrapping </li>
+<li>Sun: Paging focusing on Swapping</li>
+<li>Mon: Paging focusing on Swapping</li>
+<li>Tues: Paging focusing on synchronization</li>
+<li>Weds: Finish up paging</li>
+<li>Thurs: Testing/performance tuning</li>
+<li>Fri (12th): Due at 5 pm</li>
+</ul>
+
