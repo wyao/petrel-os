@@ -40,7 +40,6 @@
 #include "opt-dumbvm.h"
 #include <array.h>
 
-#define USE_DUMBVM 0
 #define PT_TO_VADDR(i,j) (vaddr_t)((i << 22)+(j << 12))
 
 #define VM_READ 1
@@ -85,7 +84,7 @@ void pte_set_exists(struct pt_ent *pte, unsigned exists);
 struct pt_ent **pt_create(void);
 void pt_destroy(struct pt_ent **pt);
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va);
-paddr_t va_to_pa(struct addrspace *as, vaddr_t va); //TODO: CREATE IF DOESN'T EXIST
+paddr_t va_to_pa(struct addrspace *as, vaddr_t va);
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions);
 int pt_remove(struct addrspace *as, vaddr_t va);
 int pt_update(struct addrspace *as, vaddr_t va, 
@@ -108,17 +107,6 @@ struct region {
 };
 
 struct addrspace {
-#if USE_DUMBVM
-	// DumbVM fields
-	vaddr_t as_vbase1;
-	paddr_t as_pbase1;
-	size_t as_npages1;
-	vaddr_t as_vbase2;
-	paddr_t as_pbase2;
-	size_t as_npages2;
-	paddr_t as_stackpbase;
-#else
-	// ASST3 Fields
 	struct lock *pt_lock;
 	struct pt_ent **page_table;
 	// Heap pointers
@@ -126,8 +114,6 @@ struct addrspace {
 	vaddr_t heap_end;
 	struct array *regions;
 	bool is_loading;
-
-#endif
 };
 
 /*

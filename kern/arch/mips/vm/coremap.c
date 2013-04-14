@@ -470,7 +470,6 @@ void coremap_bootstrap(void){
 
 /*
  * Called at the end of boot()
- * TODO: Should we call when first used?
  */
 void swapfile_init(void){
     // Should not yet be initialized
