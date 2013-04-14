@@ -221,7 +221,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	// Copy page table
-	lock_acquire(old->pt_lock);  // Required to prevent eviction during copying
+
+	// PIN ALL PAGES - ensure that no eviction happen during copy
+	// MUST HAPPEN BEFORE LOCKING TO AVOID DEADLOCK!
+	pin_all_pages(old);
+
+	lock_acquire(old->pt_lock);
+
 	for (i=0; i<PAGE_ENTRIES; i++){
 		if (old->page_table[i] != NULL){
 			new->page_table[i] = kmalloc(PAGE_SIZE);
@@ -231,34 +237,30 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				curr_new = &new->page_table[i][j];
 				// If the entry exists (ie, page is in memory or swap space)
 				if (pte_get_exists(curr_old)){
+					int offset = swapfile_reserve_index();  // Location where we will copy the page to
 					// Page is in memory
 					if (pte_get_present(curr_old)){
 						paddr_t base_old = (pte_get_location(curr_old) << 12);
-						if (cme_try_pin(cm_get_index(base_old))) {
-							paddr_t base_new = alloc_one_page(new,PT_TO_VADDR(i,j));
-							// CONVERT TO KERNEL PTR AND MEMCPY
-							void *src = (void *)PADDR_TO_KVADDR(base_old);
-							void *dest = (void *)PADDR_TO_KVADDR(base_new);
-							memcpy(dest,src,PAGE_SIZE); // Returns dest - do we need to check?
+						void *src = (void *)PADDR_TO_KVADDR(base_old);
 
-							// Set new page table entry to a valid mapping to new location with same permissions
-							int perm = pte_get_permissions(&old->page_table[i][j]);
-							pt_update(new,PT_TO_VADDR(i,j),base_new>>12,perm,1);
+						int ret = write_page(src,offset);
+						KASSERT(ret == 0);
 
-							// Unbusy the coremap entry for both new and old page
-							cme_set_busy(cm_get_index(base_old),0);
-							cme_set_busy(cm_get_index(base_new),0);
-						}
-						else {
-							KASSERT(false); // Shouldn't happen until eviction
-						}
+						cme_set_busy(cm_get_index(base_old),0);						
 					}
 					// Page is in swap space (TODO - for now treats it as if it didn't exist)
 					else{
-						// Find a disk space for the page
-						// Copy the page to disk with VOP_WRITE
-						// Write disk location to pte and mark not present
+						void *dest = kmalloc(PAGE_SIZE);
+						int ret = read_page(dest,pte_get_location(curr_old));
+						KASSERT(ret == 0);
+
+						ret = write_page(dest,offset);
+						KASSERT(ret == 0);
+						kfree(dest);
 					}
+
+					int perm = pte_get_permissions(&old->page_table[i][j]);
+					pt_update(new,PT_TO_VADDR(i,j),offset,perm,0);
 				}
 			}
 		}
@@ -284,6 +286,10 @@ as_destroy(struct addrspace *as)
 	 */
 	unsigned num_regions, i;
 	struct region *ptr;
+
+	// PIN ALL PAGES - makes sure no evictions during destruction
+	// MUST HAPPEN BEFORE LOCKING TO AVOID DEADLOCK!
+	pin_all_pages(as);
 
 	lock_acquire(as->pt_lock); // TODO: Do we need to synchronize this?
 	pt_destroy(as->page_table);
@@ -536,22 +542,18 @@ struct pt_ent **pt_create(void){
 void pt_destroy(struct pt_ent **pt){
 	int i, j;
 	paddr_t pa;
+
 	for (i=0; i<PAGE_ENTRIES; i++){
 		if (pt[i] != NULL) {
 			// FREE CM entry
 			for (j=0; j<PAGE_ENTRIES; j++) {
 				if (pte_get_exists(&pt[i][j])) {
-					pa = pte_get_location(&pt[i][j]) << 12;
-					if (pte_get_present(&pt[i][j])) {
-						if (cme_try_pin(cm_get_index(pa)))
-							free_coremap_page(pa, false /* iskern */);
-						else {
-							KASSERT(0); // Can't happen
-						}
+					if (pte_get_present(&pt[i][j])){
+						pa = pte_get_location(&pt[i][j]) << 12;
+						free_coremap_page(pa, false /* iskern */);
 					}
-					else {
-						// Mark disk offset as available
-						KASSERT(0); // Can't happen without swap
+					else { //Swapped out - just have to free disk index
+						swapfile_free_index(pte_get_location(&pt[i][j]));
 					}
 				}
 			}

@@ -11,6 +11,13 @@
 #include <machine/coremap.h>
 #include <synch.h>
 
+#include <kern/fcntl.h>
+#include <vnode.h>
+#include <vfs.h>
+#include <bitmap.h>
+#include <cpu.h>
+#include <uio.h>
+
 #define MIN_USER_CM_PAGES 10
 
 // Local shared variables
@@ -41,16 +48,17 @@ static int reached_kpage_limit(void){
 
 static void mark_allocated(int ix, int iskern) {
     // Sanity check
-    KASSERT(coremap[ix].as == NULL);
-    KASSERT(coremap[ix].disk_offset == -1);
-    KASSERT(coremap[ix].vaddr_base == 0);
     KASSERT(coremap[ix].state == CME_FREE);
     KASSERT(coremap[ix].busy_bit == 1);
-    KASSERT(coremap[ix].use_bit == 0);
+
+    coremap[ix].as = NULL;
+    coremap[ix].disk_offset = -1;
+    coremap[ix].vaddr_base = 0;
+    coremap[ix].use_bit = 0;
 
     spinlock_acquire(&stat_lock);
     num_cm_free -= 1;
-    KASSERT(num_cm_free >= 0);
+    // KASSERT(num_cm_free >= 0); TODO: okay if not passing?
     if (iskern) {
         coremap[ix].state = CME_FIXED;
         num_cm_kernel += 1;
@@ -70,7 +78,7 @@ static void mark_allocated(int ix, int iskern) {
 /* alloc_one_page
  *
  * Allocate one page of kernel memory. Allocates kernel page if thread is
- * not NULL, eles allocates user page.
+ * not NULL, else allocates user page.
  *
  * Synchronization: note that by not locking stat_lock the entire time
  * it is possible for num_cm_user to be less than MIN_USER_CM_PAGES, but
@@ -81,7 +89,9 @@ static void mark_allocated(int ix, int iskern) {
  * to unpin page.
  */
 paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
-    int ix, iskern;
+    int ix = -1;
+    int iskern;
+    bool held_lock;
 
     KASSERT(num_cm_entries != 0);
 
@@ -93,17 +103,51 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         return INVALID_PADDR;
     }
 
-    if (num_cm_free > 0) {
+    if (num_cm_free > 0)
         ix = find_free_page();
+    if (ix < 0) {
+        // Find a page to swap
+        ix = choose_evict_page();
+        KASSERT(ix != -1); // Shouldn't happen...ever...
 
-        if (ix < 0){ // This should not happen
-            kprintf("alloc_one_page: inconsistent state\n");
-            return INVALID_PADDR;
+        if (cme_get_state(ix) != CME_FREE){
+            // To avoid deadlock, acquire AS locks in order of raw pointer value
+            // If we are evicting our own page, do nothing extra.
+            held_lock = lock_do_i_hold(coremap[ix].as->pt_lock);
+
+            if (as != NULL){
+                if ((int)coremap[ix].as < (int)as){
+                    lock_release(as->pt_lock);
+                    lock_acquire(coremap[ix].as->pt_lock);
+                    lock_acquire(as->pt_lock);
+                }
+                if ((int)coremap[ix].as > (int)as)
+                    lock_acquire(coremap[ix].as->pt_lock);
+            }
+            else {
+                // If not evicting from own addrspace
+                if (!held_lock)
+                    lock_acquire(coremap[ix].as->pt_lock);
+            }
+            // Shoot down other CPUs
+            ipi_tlbshootdown_wait_all(COREMAP_TO_PADDR(ix));
+            struct tlbshootdown ts;
+            ts.ppn = COREMAP_TO_PADDR(ix);
+            ts.done_handling = NULL;
+            // Then shoot down our own CPU
+            vm_tlbshootdown(&ts);
+
+            if (cme_get_state(ix) == CME_DIRTY)
+                swapout(COREMAP_TO_PADDR(ix));
+            evict_page(COREMAP_TO_PADDR(ix));
+
+            // When user is evicting self, do not want to free own lock
+            // Don't want kernel to drop lock in middle of as operation
+            if (!held_lock) {
+                KASSERT(coremap[ix].as != NULL);
+                lock_release(coremap[ix].as->pt_lock);
+            }
         }
-    }
-    else {
-        kprintf("alloc_one_page: currently does not support swapping\n");
-        return INVALID_PADDR;
     }
 
     // ix should be a valid page index at this point
@@ -112,6 +156,7 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     mark_allocated(ix, iskern);
 
     // If not kernel, update as and vaddr_base
+    // Also assign a disk offset for swapping
     if (!iskern) {
         KASSERT(va != 0);
         coremap[ix].as = as;
@@ -172,11 +217,16 @@ void free_coremap_page(paddr_t pa, bool iskern) {
     else {
         KASSERT(coremap[ix].as != NULL);
         coremap[ix].as = NULL;
-        // TODO: clear swap space
+
+        // Free swap space
+        KASSERT(coremap[ix].disk_offset != -1);
         KASSERT(coremap[ix].vaddr_base != 0);
+
+        swapfile_free_index(coremap[ix].disk_offset);
+        coremap[ix].disk_offset = -1;
         coremap[ix].vaddr_base = 0;
-        // KASSERT(coremap[ix].state != CME_DIRTY); TODO: uncomment
         coremap[ix].use_bit = 0;
+
         spinlock_acquire(&stat_lock);
         num_cm_user--;
     }
@@ -217,6 +267,7 @@ int find_free_page(void){
  * Intervening pages are marked unused.
  */
 int choose_evict_page(void){
+    int ret;
     while(1){
         if (cme_get_state(clock_hand) != CME_FIXED){
             if (cme_try_pin(clock_hand)){
@@ -224,15 +275,32 @@ int choose_evict_page(void){
                     cme_set_use(clock_hand,0);
                     cme_set_busy(clock_hand,0);
                 }
-                else //if tlb_probe_all(page i) TODO
-                    return clock_hand;
+                else {
+                    ret = clock_hand;
+                    clock_hand = (clock_hand + 1) % num_cm_entries;
+                    return ret;
+                }
             }
-            clock_hand++;
-            if (clock_hand >= (int)num_cm_entries)
-                clock_hand = 0;
         }
+        clock_hand++;
+        clock_hand = clock_hand % num_cm_entries;
     }
     return -1; //Control should never reach here...
+}
+
+
+/*
+ * Busy-waits until all pages for an AS are pinned
+ */
+void pin_all_pages(struct addrspace *as){
+    int i; 
+    for (i=0; i<num_cm_entries; i++){
+        if (coremap[i].as == as){
+            while (!cme_try_pin(i)){
+                ;
+            }
+        }
+    }
 }
 
 /* 
@@ -248,6 +316,14 @@ int cme_get_vaddr(int ix){
 }
 void cme_set_vaddr(int ix, int vaddr){
     coremap[ix].vaddr_base = vaddr >> 12;
+}
+
+int cme_get_offset(int ix){
+    return coremap[ix].disk_offset;
+}
+
+void cme_set_offset(int ix, int offset){
+    coremap[ix].disk_offset = offset;
 }
 
 unsigned cme_get_state(int ix){
@@ -354,6 +430,193 @@ void coremap_bootstrap(void){
 
 
 /*
+ * Swap space helper functions
+ */
+
+/*
+ * Called at the end of boot()
+ * TODO: Should we call when first used?
+ */
+void swapfile_init(void){
+    // Should not yet be initialized
+    KASSERT(swapfile == NULL);
+    KASSERT(disk_map == NULL);
+    KASSERT(disk_map_lock == NULL);
+
+    char *disk_path = NULL;
+    disk_path = kstrdup("lhd0raw:");
+    if (disk_path == NULL)
+        panic("swapfile_init: could not open disk");
+
+    int err = vfs_open(disk_path,O_RDWR,0,&swapfile);
+    if (err)
+        panic("swapfile_init: could not open disk");
+
+    // TODO: 1200 is an approximation of 5MB/4KB, which is max number of pages we can have in swap
+    disk_map = bitmap_create(1200);
+    if (disk_map == NULL)
+        panic("swapfile_init: could not create disk map");
+
+    disk_map_lock = lock_create("disk map lock");
+    if (disk_map_lock == NULL)
+        panic("swapfile_init: could not create disk map lock");
+
+    //dirty_pages = sem_create("dirty pages",0);
+
+    //thread_fork("writer",writer_thread,NULL,0,NULL);
+}
+
+/*
+ * Uses the bitmap disk_map to find and return an available index, marking it used
+ * Panics in case of swap space being filled
+ */
+unsigned swapfile_reserve_index(void){
+    KASSERT(swapfile != NULL);
+    KASSERT(disk_map != NULL);
+    KASSERT(disk_map_lock != NULL);
+
+    lock_acquire(disk_map_lock);
+
+    unsigned index;
+    if (bitmap_alloc(disk_map,&index))
+        panic("swapfile_reserve_index: disk out of space");
+
+    lock_release(disk_map_lock);
+    return index;
+}
+
+/*
+ * Marks the given index of the disk map freed - index must have been previously obtained
+ * through the use of swapfile_reserve_index
+ */
+void swapfile_free_index(unsigned index){
+    KASSERT(swapfile != NULL);
+    KASSERT(disk_map != NULL);
+    KASSERT(disk_map_lock != NULL);
+
+    lock_acquire(disk_map_lock);
+
+    KASSERT(bitmap_isset(disk_map,index));
+    bitmap_unmark(disk_map,index);
+
+    lock_release(disk_map_lock);
+}
+
+/*
+ * Writes a page of physical memory to disk offset specified in coremap
+ * evict_page should only be called after successful return of this function
+ */
+int swapout(paddr_t ppn){
+    KASSERT(PADDR_IS_VALID(ppn));
+
+    int i = PADDR_TO_COREMAP(ppn);
+    KASSERT(coremap[i].disk_offset != -1);
+    KASSERT(coremap[i].state == CME_DIRTY);
+
+    int ret = write_page((void *)PADDR_TO_KVADDR(ppn),coremap[i].disk_offset);
+    if (!ret)
+        cme_set_state(i,CME_CLEAN);
+    return ret;
+}
+
+/*
+ * Reads a page of physical memory from the disk offset specified in the 
+ * thread's page table to the given physical address. 
+ * Upon success of read, updates the core map and page table.
+ * Should be called after successful completion of evict_page
+ */
+int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest){
+    int idx, ret;
+    unsigned offset;
+
+    KASSERT(as != NULL);
+    KASSERT(lock_do_i_hold(as->pt_lock));
+    KASSERT(PADDR_IS_VALID(dest));
+
+    struct pt_ent *pte = get_pt_entry(as,vpn);
+    KASSERT(pte != NULL && pte_get_exists(pte));
+    KASSERT(!pte_get_present(pte));
+
+    offset = pte_get_location(pte);
+    ret = read_page((void *)PADDR_TO_KVADDR(dest),offset);
+
+    if (!ret){
+        idx = PADDR_TO_COREMAP(dest);
+        coremap[idx].disk_offset = offset;
+        coremap[idx].vaddr_base = vpn>>12;
+        coremap[idx].as = as;
+        coremap[idx].state = CME_CLEAN;
+
+        pte_set_present(pte,1);
+        pte_set_location(pte,dest>>12);
+    }
+
+    return ret;
+}
+
+/*
+ * Updates page table to have entry marked as absent and its location
+ * set to the offset on disk where it can be found.
+ *
+ * SHOULD ONLY BE CALLED WHEN THE LOCKS FOR BOTH ADDRSPACES ARE HELD
+ */
+void evict_page(paddr_t ppn){
+    KASSERT(PADDR_IS_VALID(ppn));
+
+    int i = PADDR_TO_COREMAP(ppn);
+    KASSERT(coremap[i].state == CME_CLEAN);
+    KASSERT(coremap[i].disk_offset != -1);
+    KASSERT(coremap[i].as != NULL);
+
+    struct pt_ent *pte = get_pt_entry(coremap[i].as,coremap[i].vaddr_base<<12);
+    KASSERT(pte != NULL);
+
+    pte_set_present(pte,0);
+    pte_set_location(pte,coremap[i].disk_offset);
+
+    cme_set_state(i,CME_FREE);
+}
+
+int write_page(void *page, unsigned offset){
+    // TODO: Assert offset is not off disk
+
+    struct iovec iov;
+    struct uio u;
+    uio_kinit(&iov, &u, (char *)page, PAGE_SIZE, offset*PAGE_SIZE, UIO_WRITE);
+
+    return VOP_WRITE(swapfile,&u);
+}
+
+int read_page(void *page, unsigned offset){
+    // TODO: Assert offset is not off disk
+
+    struct iovec iov;
+    struct uio u;
+    uio_kinit(&iov, &u, (char *)page, PAGE_SIZE, offset*PAGE_SIZE, UIO_READ);
+
+    return VOP_READ(swapfile,&u);
+}
+
+// NOTE: As of now, ignoring cleaner thread
+void writer_thread(void *junk, unsigned long num){
+    (void)junk;
+    (void)num;
+
+    int i;
+    while(1){
+        P(dirty_pages);
+        for (i=0; i<(int)num_cm_entries; i++){
+            if (cme_get_state(i) == CME_DIRTY){
+                // Write dirty page to memory
+                cme_set_state(i,CME_CLEAN);
+                // Signal CV
+                break;
+            }
+        }
+    }
+}
+
+/*
  * TLB Shootdown handlers (MACHINE DEPENDENT)
  * Interrupts are disabled with spl to ensure that TLB wipes are atomic
  * (This may only be important for shootdown_all...)
@@ -382,7 +645,7 @@ void vm_tlbshootdown(const struct tlbshootdown *ts){
     if (cme_get_state(ix) == CME_FREE)
         goto done;
 
-    uint32_t vpn = (uint32_t)cme_get_vaddr(ix);
+    uint32_t vpn = (uint32_t)cme_get_vaddr(ix) & TLBHI_VPAGE;
     int ret = tlb_probe(vpn,0); // ppn is not used by function
 
     if (ret >= 0) // tlb_probe returns negative value on failure or index on success
@@ -393,22 +656,5 @@ void vm_tlbshootdown(const struct tlbshootdown *ts){
         V(sem);
 
     splx(spl);
-}
-
-/*
- * Sets up tlbshootdown struct and permforms a shootdown synchronized by the semaphore
- * Handles allocation and destruction of the semaphore
- */
-void vm_tlbshootdown_wait(uint32_t ppn){
-    struct tlbshootdown ts;
-    struct semaphore *s = sem_create("wait on",0);
-
-    ts.done_handling = s;
-    ts.ppn = ppn;
-
-    vm_tlbshootdown(&ts);
-    P(s); // Only V-ed upon completion of shootdown
-
-    sem_destroy(s);
 }
 

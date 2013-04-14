@@ -31,6 +31,11 @@ struct cm_entry{
 struct cv *written_to_disk;
 struct lock *cv_lock;
 
+struct vnode *swapfile;
+struct bitmap *disk_map;
+struct lock *disk_map_lock;
+struct semaphore *dirty_pages;
+
 /*
  * Page selection APIs
  */
@@ -40,6 +45,7 @@ void free_coremap_page(paddr_t pa, bool iskern);
 void free_kpages(vaddr_t va);
 int find_free_page(void);
 int choose_evict_page(void);
+void pin_all_pages(struct addrspace *as);
 
 /*
  * Acessor/setter methods
@@ -48,6 +54,9 @@ int cm_get_index(paddr_t pa);
 
 int cme_get_vaddr(int ix);
 void cme_set_vaddr(int ix, int vaddr);
+
+int cme_get_offset(int ix);
+void cme_set_offset(int ix, int offset);
 
 unsigned cme_get_state(int ix);
 void cme_set_state(int ix, unsigned state);
@@ -67,5 +76,21 @@ void cme_set_use(int ix, unsigned use);
  */
 
 void coremap_bootstrap(void);
+
+/*
+ * Swap space functions
+ */
+
+void swapfile_init(void);
+unsigned swapfile_reserve_index(void); // Called in mark_allocated()
+void swapfile_free_index(unsigned index); // Called in free_coremap_page()
+
+int swapout(paddr_t ppn);
+int swapin(struct addrspace *as, vaddr_t vpn, paddr_t dest);
+void evict_page(paddr_t ppn);
+int write_page(void *page, unsigned offset);
+int read_page(void *page, unsigned offset);
+void writer_thread(void *junk, unsigned long num);
+
 
 #endif /* _COREMAP_H_ */

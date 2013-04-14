@@ -1398,6 +1398,35 @@ ipi_tlbshootdown(struct cpu *target, const struct tlbshootdown *mapping)
 	spinlock_release(&target->c_ipi_lock);
 }
 
+/*
+ * Sets up tlbshootdown struct and permforms a shootdown synchronized by the semaphore
+ * Handles allocation and destruction of the semaphore
+ */
+void ipi_tlbshootdown_wait(struct cpu *target, uint32_t ppn){
+    struct tlbshootdown ts;
+    struct semaphore *s = sem_create("wait on",0);
+
+    ts.done_handling = s;
+    ts.ppn = ppn;
+
+    ipi_tlbshootdown(target,&ts);
+    P(s); // Only V-ed upon completion of shootdown
+
+    sem_destroy(s);
+}
+
+void ipi_tlbshootdown_wait_all(uint32_t ppn){
+	unsigned i;
+	struct cpu *c;
+
+	for (i=0; i < cpuarray_num(&allcpus); i++) {
+		c = cpuarray_get(&allcpus, i);
+		if (c != curcpu->c_self) {
+			ipi_tlbshootdown_wait(c,ppn);
+		}
+	}
+}
+
 void
 interprocessor_interrupt(void)
 {
