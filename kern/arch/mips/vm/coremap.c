@@ -116,7 +116,7 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
 
     iskern = (as == NULL);
 
-    // check there we leave enough pages for user
+    // Check there we leave enough pages for user
     if (iskern && reached_kpage_limit()) {
         kprintf("alloc_one_page: kernel heap full\n");
         return INVALID_PADDR;
@@ -129,12 +129,16 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
         ix = choose_evict_page();
         KASSERT(ix != -1);
 
+        /* 
+         * choose_evict_page can possibly return a free page, in which case
+         * we skip the eviction logic.
+         */
         if (cme_get_state(ix) != CME_FREE){
-            // To avoid deadlock, acquire AS locks in order of raw pointer value
-            // If we are evicting our own page, do nothing extra.
             held_lock = lock_do_i_hold(coremap[ix].as->pt_lock);
 
+            // If a user is calling the function:
             if (as != NULL){
+                // To avoid deadlock, acquire AS locks in order of raw pointer value
                 if ((int)coremap[ix].as < (int)as){
                     lock_release(as->pt_lock);
                     lock_acquire(coremap[ix].as->pt_lock);
@@ -142,12 +146,18 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
                 }
                 if ((int)coremap[ix].as > (int)as)
                     lock_acquire(coremap[ix].as->pt_lock);
+                // If we are evicting our own page, do nothing extra since we already hold our own lock
             }
             else {
-                // If not evicting from own addrspace
+                // Kernel might already hold lock when entering the function (as_copy)
                 if (!held_lock)
                     lock_acquire(coremap[ix].as->pt_lock);
             }
+            /*
+             * After acquiring page table locks, we must shoot down the TLB for the address to evict
+             * Once this completes, the address cannot be accessed by its old mapping.
+             */
+
             // Shoot down other CPUs
             ipi_tlbshootdown_wait_all(COREMAP_TO_PADDR(ix));
             struct tlbshootdown ts;
