@@ -50,31 +50,6 @@
 #define PT_SECONDARY_INDEX(va) (int)((va >> 12) & 0x3FF)
 #define ADDRESS_OFFSET(addr) (int)(addr & 0xFFF)
 
-#if USE_DUMBVM
-static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;  // THIS IS IN BOTH VM.C AND HERE
-
-/* DUMBVM HELPER METHODS */
-static
-paddr_t
-getppages(unsigned long npages) //DUPLICATED IN VM.C FOR NOW
-{
-	paddr_t addr;
-
-	spinlock_acquire(&stealmem_lock);
-
-	addr = ram_stealmem(npages);
-
-	spinlock_release(&stealmem_lock);
-	return addr;
-}
-
-static
-void
-as_zero_region(paddr_t paddr, unsigned npages)
-{
-	bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE);
-}
-#endif
 
 /* AS FUNCTIONS */
 
@@ -94,21 +69,6 @@ as_create(void)
 		return NULL;
 	}
 
-	#if USE_DUMBVM
-	/*
-	 * DUMBVM INITIALIZATION
-	 */
-	as->as_vbase1 = 0;
-	as->as_pbase1 = 0;
-	as->as_npages1 = 0;
-	as->as_vbase2 = 0;
-	as->as_pbase2 = 0;
-	as->as_npages2 = 0;
-	as->as_stackpbase = 0;
-
-	return as;
-
-	#else
 	/*
 	 * ASST3 Initialization
 	 */
@@ -120,20 +80,20 @@ as_create(void)
 		goto err2;
 	as->regions = array_create();
 	if (as->regions == NULL)
-		goto err2;
+		goto err3;
 	as->heap_start = (vaddr_t)0;
 	as->heap_end = (vaddr_t)0;
 	as->is_loading = false;
 
 	return as;
 
+	err3:
+	pt_destroy(as->page_table);
 	err2:
 	lock_destroy(as->pt_lock);
 	err1:
 	kfree(as);
 	return NULL;
-
-	#endif
 }
 
 /* as_copy
@@ -154,45 +114,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-	#if USE_DUMBVM
-	/*
-	 * DUMBVM COPY
-	 */
-	new->as_vbase1 = old->as_vbase1;
-	new->as_npages1 = old->as_npages1;
-	new->as_vbase2 = old->as_vbase2;
-	new->as_npages2 = old->as_npages2;
-
-	/* (Mis)use as_prepare_load to allocate some physical memory. */
-	if (as_prepare_load(new)) {
-		as_destroy(new);
-		return ENOMEM;
-	}
-
-	KASSERT(new->as_pbase1 != 0);
-	KASSERT(new->as_pbase2 != 0);
-	KASSERT(new->as_stackpbase != 0);
-
-	memmove((void *)PADDR_TO_KVADDR(new->as_pbase1),
-		(const void *)PADDR_TO_KVADDR(old->as_pbase1),
-		old->as_npages1*PAGE_SIZE);
-
-	memmove((void *)PADDR_TO_KVADDR(new->as_pbase2),
-		(const void *)PADDR_TO_KVADDR(old->as_pbase2),
-		old->as_npages2*PAGE_SIZE);
-
-	memmove((void *)PADDR_TO_KVADDR(new->as_stackpbase),
-		(const void *)PADDR_TO_KVADDR(old->as_stackpbase),
-		DUMBVM_STACKPAGES*PAGE_SIZE);
-
-	*ret = new;
-	return 0;
-
-	#else
 	int i,j, errno;
 	unsigned n, c;
-	struct pt_ent *curr_old, *curr_new;
 	struct region *old_region, *new_region;
+	void *src, *dest;
+	struct pt_ent *curr_old, *curr_new;
+	int retval, perm, offset;
+	paddr_t base_old;
 
 	new->heap_start = old->heap_start;
 	new->heap_end = old->heap_end;
@@ -203,8 +131,7 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		old_region = array_get(old->regions, c);
 		new_region = kmalloc(sizeof(struct region));
 		if (old_region == NULL || new_region == NULL) {
-			// TODO cleanup
-			return 3; //ENOMEM
+			goto err1;
 		}
 
 		new_region->base = old_region->base;
@@ -215,19 +142,17 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 		errno = array_add(new->regions, new_region, NULL);
 		if (errno) {
-			// TODO cleanup
-			return errno;
+			goto err1;
 		}
 	}
 
 	// Copy page table
 
 	// PIN ALL PAGES - ensure that no eviction happen during copy
-	// MUST HAPPEN BEFORE LOCKING TO AVOID DEADLOCK!
+	// MUST HAPPEN BEFORE LOCKING ADDRESS SPACE TO AVOID DEADLOCK!
 	pin_all_pages(old);
 
 	lock_acquire(old->pt_lock);
-
 	for (i=0; i<PAGE_ENTRIES; i++){
 		if (old->page_table[i] != NULL){
 			new->page_table[i] = kmalloc(PAGE_SIZE);
@@ -237,29 +162,34 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 				curr_new = &new->page_table[i][j];
 				// If the entry exists (ie, page is in memory or swap space)
 				if (pte_get_exists(curr_old)){
-					int offset = swapfile_reserve_index();  // Location where we will copy the page to
+					offset = swapfile_reserve_index();  // Location where we will copy the page to
 					// Page is in memory
 					if (pte_get_present(curr_old)){
-						paddr_t base_old = (pte_get_location(curr_old) << 12);
-						void *src = (void *)PADDR_TO_KVADDR(base_old);
+						// Write from pinned memory page to new disk offset
+						base_old = (pte_get_location(curr_old) << 12);
+						src = (void *)PADDR_TO_KVADDR(base_old);
 
-						int ret = write_page(src,offset);
-						KASSERT(ret == 0);
+						retval = write_page(src,offset);
+						KASSERT(retval == 0);
 
+						// If page was in memory, we pinned it at the start with pin_all_pages
+						// so we must unpin it upon completion of copying
 						cme_set_busy(cm_get_index(base_old),0);						
 					}
-					// Page is in swap space (TODO - for now treats it as if it didn't exist)
+					// Page is in swap space
 					else{
-						void *dest = kmalloc(PAGE_SIZE);
-						int ret = read_page(dest,pte_get_location(curr_old));
-						KASSERT(ret == 0);
+						// Make a temporary buffer and read the page from disk
+						dest = kmalloc(PAGE_SIZE);
+						retval = read_page(dest,pte_get_location(curr_old));
+						KASSERT(retval == 0);
 
-						ret = write_page(dest,offset);
-						KASSERT(ret == 0);
+						// Copy the page from the buffer to the new disk offset
+						retval = write_page(dest,offset);
+						KASSERT(retval == 0);
 						kfree(dest);
 					}
-
-					int perm = pte_get_permissions(&old->page_table[i][j]);
+					// Update the page table for the new process
+					perm = pte_get_permissions(&old->page_table[i][j]);
 					pt_update(new,PT_TO_VADDR(i,j),offset,perm,0);
 				}
 			}
@@ -270,17 +200,19 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	lock_release(old->pt_lock);
 
 	return 0;
-	#endif
+	
+	err1:
+	for (i=0; i<(int)n; i++){
+		new_region = (struct region *)array_get(new->regions,i);
+		if (new_region != NULL)
+			kfree(new_region);
+	}
+	return ENOMEM;
 }
 
 void
 as_destroy(struct addrspace *as)
 {
-	/*
-	 * Clean up as needed.
-	 */
-
-	#if !USE_DUMBVM
 	/*
 	 * ASST3 Destruction
 	 */
@@ -288,10 +220,11 @@ as_destroy(struct addrspace *as)
 	struct region *ptr;
 
 	// PIN ALL PAGES - makes sure no evictions during destruction
-	// MUST HAPPEN BEFORE LOCKING TO AVOID DEADLOCK!
+	// MUST HAPPEN BEFORE LOCKING ADDRESS SPACE TO AVOID DEADLOCK!
 	pin_all_pages(as);
 
-	lock_acquire(as->pt_lock); // TODO: Do we need to synchronize this?
+	// Free page table entries and associated core map entries
+	lock_acquire(as->pt_lock);
 	pt_destroy(as->page_table);
 	lock_release(as->pt_lock);
 	lock_destroy(as->pt_lock);
@@ -310,33 +243,16 @@ as_destroy(struct addrspace *as)
 	}
 	array_destroy(as->regions);
 
-	#endif
-
 	kfree(as);
 }
 
 void
 as_activate(struct addrspace *as)
 {
-	/*
-	 * DUMBVM ACTIVATION
-	 */
-
-	//int i, spl;
-
 	(void)as;
 
-	/* Disable interrupts on this CPU while frobbing the TLB. */
-	/*spl = splhigh();
-
-	for (i=0; i<NUM_TLB; i++) {
-		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
-	}
-
-	splx(spl);*/
-
+	// Writes over entire TLB with invalid entries
 	vm_tlbshootdown_all();
-
 }
 
 /*
@@ -353,46 +269,6 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		 int readable, int writeable, int executable)
 {
-	/*
-	 * DUMBVM DEFINE REGION
-	 */
-	#if USE_DUMBVM
-	size_t npages;
-
-	/* Align the region. First, the base... */
-	sz += vaddr & ~(vaddr_t)PAGE_FRAME;
-	vaddr &= PAGE_FRAME;
-
-	/* ...and now the length. */
-	sz = (sz + PAGE_SIZE - 1) & PAGE_FRAME;
-
-	npages = sz / PAGE_SIZE;
-
-	/* We don't use these - all pages are read-write */
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-
-	if (as->as_vbase1 == 0) {
-		as->as_vbase1 = vaddr;
-		as->as_npages1 = npages;
-		return 0;
-	}
-
-	if (as->as_vbase2 == 0) {
-		as->as_vbase2 = vaddr;
-		as->as_npages2 = npages;
-		return 0;
-	}
-
-	/*
-	 * Support for more than two regions is not available.
-	 */
-	kprintf("dumbvm: Warning: too many regions\n");
-	return EUNIMP;
-
-	#else
-
 	int errno;
 	struct region *region;
 	/* Align the region. First, the base... */
@@ -411,7 +287,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	// Record region (to be used in vm_fault)
 	region = kmalloc(sizeof(struct region));
 	if (region == NULL)
-		return 3 /* ENOMEM */;
+		return ENOMEM;
 	region->base = vaddr;
 	region->sz = sz;
 	region->readable = readable;
@@ -422,83 +298,38 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 		return errno;
 
 	return 0;
-	#endif
 }
 
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*
-	 * DUMBVM PREPARE LOAD
-	 */
-	#if USE_DUMBVM
-	KASSERT(as->as_pbase1 == 0);
-	KASSERT(as->as_pbase2 == 0);
-	KASSERT(as->as_stackpbase == 0);
-
-	as->as_pbase1 = getppages(as->as_npages1);
-	if (as->as_pbase1 == 0) {
-		return ENOMEM;
-	}
-
-	as->as_pbase2 = getppages(as->as_npages2);
-	if (as->as_pbase2 == 0) {
-		return ENOMEM;
-	}
-
-	as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
-	if (as->as_stackpbase == 0) {
-		return ENOMEM;
-	}
-
-	as_zero_region(as->as_pbase1, as->as_npages1);
-	as_zero_region(as->as_pbase2, as->as_npages2);
-	as_zero_region(as->as_stackpbase, DUMBVM_STACKPAGES);
-
-	return 0;
-
-	#else
-
+	// VM_READONLY fault handling has special case allowing dirtying of page
+	// if the is_loading variable of the address space is set
 	as->is_loading = true;
-	return 0;
 
-	#endif
+	return 0;
 }
 
 int
 as_complete_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
-	#if USE_DUMBVM
-
-	(void)as;
-	return 0;
-
-	#else
-
 	as->is_loading = false;
 	return 0;
-
-	#endif
 }
 
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * WDUMBVM DEFINE STACK
-	 */
-	#if USE_DUMBVM
-	KASSERT(as->as_stackpbase != 0);
-	#endif
-
 	*stackptr = USERSTACK;
 	(void)as;
 	return 0;
 }
 
+/*
+ * Searches the regions of an address space to find the one the given
+ * virtual address falls in, then returns the permissions of the region.
+ * Returns -1 if the given address does not fall in a region
+ */
 int as_get_permissions(struct addrspace *as, vaddr_t va){
 	unsigned i;
 	int permissions = 0;
@@ -526,6 +357,7 @@ int as_get_permissions(struct addrspace *as, vaddr_t va){
  * Page table helper methods
  */
 
+// Allocates and returns a pointer to a page table directory
 struct pt_ent **pt_create(void){
 	int i;
 	struct pt_ent **ret = (struct pt_ent **)kmalloc(PAGE_SIZE);
@@ -539,20 +371,28 @@ struct pt_ent **pt_create(void){
 	return ret;
 }
 
+/*
+ * Frees the page table after freeing any coremap entries and disk offsets that
+ * were mapped to virtual addresses within it.
+ *
+ * Should only be called with the address space lock and a pin on all coremap entries
+ * that the process owns.
+ */
 void pt_destroy(struct pt_ent **pt){
 	int i, j;
 	paddr_t pa;
 
 	for (i=0; i<PAGE_ENTRIES; i++){
 		if (pt[i] != NULL) {
-			// FREE CM entry
 			for (j=0; j<PAGE_ENTRIES; j++) {
 				if (pte_get_exists(&pt[i][j])) {
+					// If the page exists, we should free the coremap entry
 					if (pte_get_present(&pt[i][j])){
 						pa = pte_get_location(&pt[i][j]) << 12;
 						free_coremap_page(pa, false /* iskern */);
 					}
-					else { //Swapped out - just have to free disk index
+					// Swapped out - just have to free disk index
+					else {
 						swapfile_free_index(pte_get_location(&pt[i][j]));
 					}
 				}
@@ -563,6 +403,10 @@ void pt_destroy(struct pt_ent **pt){
 	kfree(pt);
 }
 
+/*
+ * Returns pointer to a page table entry if the address has been used before
+ * or NULL if it has not.
+ */
 struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	int index = PT_PRIMARY_INDEX(va);
 
@@ -575,7 +419,6 @@ struct pt_ent *get_pt_entry(struct addrspace *as, vaddr_t va){
 	return NULL;
 }
 
-//TODO: CREATE IF DOESN'T EXIST?
 paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 	struct pt_ent *pte = get_pt_entry(as,va);
 	if (pte == NULL)
@@ -586,21 +429,25 @@ paddr_t va_to_pa(struct addrspace *as, vaddr_t va){
 	return pa;
 }
 
-
+/*
+ * Creates new page table entry for given virtual/physical mapping and permissions
+ * Fails if the entry already exists
+ */
 int pt_insert(struct addrspace *as, vaddr_t va, int ppn, int permissions){
-	// If a secondary page table does not exist, allocate one
 	int i;
 
 	KASSERT(as != NULL);
 	KASSERT((ppn & 0xfff00000) == 0);
 	KASSERT(permissions >= 0 && permissions <= 7);
 
+	// If a secondary page table does not exist, allocate one
 	if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL) {
 		as->page_table[PT_PRIMARY_INDEX(va)] = kmalloc(PAGE_SIZE);
 
 		if (as->page_table[PT_PRIMARY_INDEX(va)] == NULL)
 			return ENOMEM;
 
+		// Initalizes all entries in the allocated page table to zero
 		for (i=0; i<PAGE_ENTRIES; i++){
 			as->page_table[PT_PRIMARY_INDEX(va)][i].page_paddr_base = 0;
 			as->page_table[PT_PRIMARY_INDEX(va)][i].permissions = 0;
@@ -630,6 +477,11 @@ int pt_remove(struct addrspace *as, vaddr_t va){
 	return 0;
 }
 
+/*
+ * Updates page table entry for the virtual address to map to a new location with new permissions
+ * and 'present' status.  
+ * Used for updating pages as they are swapped in or out
+ */
 int pt_update(struct addrspace *as, vaddr_t va, int ppn, int permissions, unsigned is_present){
 	struct pt_ent *pte = get_pt_entry(as,va);
 	if (pte == NULL)
