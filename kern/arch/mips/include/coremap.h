@@ -72,9 +72,8 @@ unsigned cme_get_use(int ix);
 void cme_set_use(int ix, unsigned use);
 
 /*
- * Machine-dependent functions
+ * Bootstrap
  */
-
 void coremap_bootstrap(void);
 
 /*

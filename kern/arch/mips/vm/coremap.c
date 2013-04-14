@@ -38,13 +38,29 @@ static int num_cm_user;
  * Static page selection helpers
  */
 
-// See alloc_one_page for synchonization note.
+/*
+ * reached_kpage_limit
+ *
+ * Checks that we reserve enough physical pages for the user.
+ *
+ * Synchronization: See alloc_one_page for synchonization note.
+ */
+
 static int reached_kpage_limit(void){
     if (num_cm_kernel + 1 >= num_cm_entries - MIN_USER_CM_PAGES) {
         return 1;
     }
     return 0;
 }
+
+/*
+ * mark_allocated
+ *
+ * Mark the coremap entry as allocated and reset all the bits
+ *
+ * Sychronization: Acquire stat_lock when updating coremap
+ * bookkeeping variables.
+ */
 
 static void mark_allocated(int ix, int iskern) {
     // Sanity check
@@ -58,7 +74,6 @@ static void mark_allocated(int ix, int iskern) {
 
     spinlock_acquire(&stat_lock);
     num_cm_free -= 1;
-    // KASSERT(num_cm_free >= 0); TODO: okay if not passing?
     if (iskern) {
         coremap[ix].state = CME_FIXED;
         num_cm_kernel += 1;
@@ -75,19 +90,23 @@ static void mark_allocated(int ix, int iskern) {
  * Page selection APIs
  */
 
-/* alloc_one_page
+/*
+ * alloc_one_page
  *
  * Allocate one page of kernel memory. Allocates kernel page if thread is
  * not NULL, else allocates user page.
  *
- * Synchronization: note that by not locking stat_lock the entire time
+ * Synchronization: TODO Aidan
+ *
+ * Note that by not locking stat_lock the entire time
  * it is possible for num_cm_user to be less than MIN_USER_CM_PAGES, but
- * this should be fine if MIN_USER_CM_PAGES is set large enough. This
- * decision was made to keep stat_lock as granular as possible.
+ * this should be fine if MIN_USER_CM_PAGES is set large enough, which it is.
+ * This decision was made to keep stat_lock as granular as possible.
  *
  * Leaves it up to vm_fault() (for user) and alloc_kpages() (for kernel)
  * to unpin page.
  */
+
 paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     int ix = -1;
     int iskern;
@@ -108,7 +127,7 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     if (ix < 0) {
         // Find a page to swap
         ix = choose_evict_page();
-        KASSERT(ix != -1); // Shouldn't happen...ever...
+        KASSERT(ix != -1);
 
         if (cme_get_state(ix) != CME_FREE){
             // To avoid deadlock, acquire AS locks in order of raw pointer value
@@ -149,7 +168,6 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
             }
         }
     }
-
     // ix should be a valid page index at this point
     KASSERT(coremap[ix].state == CME_FREE);
     KASSERT(coremap[ix].busy_bit == 1);
@@ -165,6 +183,16 @@ paddr_t alloc_one_page(struct addrspace *as, vaddr_t va){
     return COREMAP_TO_PADDR(ix);
 }
 
+/*
+ * alloc_kpages
+ *
+ * Only allow for single page allocations. Note that we did not have time
+ * to modify execv to reflect this change.
+ *
+ * Sychronization: Responsible for unpinning the coremap entry that
+ * was allocated.
+ */
+
 vaddr_t alloc_kpages(int npages) {
     paddr_t pa;
 
@@ -174,6 +202,7 @@ vaddr_t alloc_kpages(int npages) {
     }
 
     pa = alloc_one_page(NULL, (vaddr_t)0);
+
     if (pa == INVALID_PADDR) {
         kprintf("alloc_kpages: allocation failed\n");
         return (vaddr_t) NULL;
@@ -185,7 +214,9 @@ vaddr_t alloc_kpages(int npages) {
 /*
  * free_coremap_page
  *
- * Synchronization: if not freeing kernel page, the physical page needs to be
+ * Mark coremap entry as available and other bookkeeping.
+ *
+ * Synchronization: If not freeing kernel page, the physical page needs to be
  * pinned prior to calling this function. This is to ensure that we are able to
  * grab the page table lock and pin the page at the same time. Just for
  * consistency's sake, we also leave it to the caller to unpin the physical
@@ -202,8 +233,6 @@ void free_coremap_page(paddr_t pa, bool iskern) {
     }
 
     KASSERT(iskern || cme_get_busy(ix));
-
-    // TODO: Flush TLB
 
     if (iskern) {
         KASSERT(coremap[ix].as == NULL);
@@ -245,9 +274,14 @@ void free_kpages(vaddr_t va) {
 }
 
 /*
+ * find_free_page
+ *
  * Finds a non-busy page that is marked CME_FREE and returns its coremap index
  * or -1 on failure.  Returned page is marked as busy.
+ *
+ * Synchronization: Tries to pin page before selecting it.
  */
+
 int find_free_page(void){
     int i;
     for (i=0; i<(int)num_cm_entries; i++){
@@ -263,9 +297,14 @@ int find_free_page(void){
 }
 
 /*
- * Finds a non-busy page that is marked NRU and returns it. 
- * Intervening pages are marked unused.
+ * choose_evict_page
+ *
+ * Finds a non-busy page that is marked NRU and returns it. Intervening
+ * pages are marked unused. Guaranteed to return a page index.
+ *
+ * Synchronization: Tries to pin a page before selecting it for eviction.
  */
+
 int choose_evict_page(void){
     int ret;
     while(1){
@@ -290,8 +329,9 @@ int choose_evict_page(void){
 
 
 /*
- * Busy-waits until all pages for an AS are pinned
+ * Busy-waits until all pages for an addrspace are pinned
  */
+
 void pin_all_pages(struct addrspace *as){
     int i; 
     for (i=0; i<num_cm_entries; i++){
@@ -321,7 +361,6 @@ void cme_set_vaddr(int ix, int vaddr){
 int cme_get_offset(int ix){
     return coremap[ix].disk_offset;
 }
-
 void cme_set_offset(int ix, int offset){
     coremap[ix].disk_offset = offset;
 }
@@ -343,6 +382,7 @@ unsigned cme_get_busy(int ix){
 void cme_set_busy(int ix, unsigned busy){
     coremap[ix].busy_bit = (busy > 0);
 }
+
 // Returns 1 on success (cme[ix] was not busy) and 0 on failure
 unsigned cme_try_pin(int ix){
     spinlock_acquire(&busy_lock);
@@ -350,7 +390,6 @@ unsigned cme_try_pin(int ix){
     if(cme_get_busy(ix)) {
         spinlock_release(&busy_lock);
         return 0;
-
     }
     // If not busy, pin it!
     cme_set_busy(ix,1);
@@ -364,10 +403,6 @@ unsigned cme_get_use(int ix){
 void cme_set_use(int ix, unsigned use){
     coremap[ix].use_bit = (use > 0);
 }
-
-/*
- * Machine-dependent functions
- */
 
 /* coremap_bootstrap
  *
@@ -460,15 +495,11 @@ void swapfile_init(void){
     disk_map_lock = lock_create("disk map lock");
     if (disk_map_lock == NULL)
         panic("swapfile_init: could not create disk map lock");
-
-    //dirty_pages = sem_create("dirty pages",0);
-
-    //thread_fork("writer",writer_thread,NULL,0,NULL);
 }
 
 /*
- * Uses the bitmap disk_map to find and return an available index, marking it used
- * Panics in case of swap space being filled
+ * Uses the bitmap disk_map to find and return an available index, marking
+ * it used. Panics in case of swap space being filled
  */
 unsigned swapfile_reserve_index(void){
     KASSERT(swapfile != NULL);
@@ -486,8 +517,8 @@ unsigned swapfile_reserve_index(void){
 }
 
 /*
- * Marks the given index of the disk map freed - index must have been previously obtained
- * through the use of swapfile_reserve_index
+ * Marks the given index of the disk map freed - index must have been
+ * previously obtained through the use of swapfile_reserve_index
  */
 void swapfile_free_index(unsigned index){
     KASSERT(swapfile != NULL);
