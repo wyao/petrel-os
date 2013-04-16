@@ -51,6 +51,10 @@ vnode_init(struct vnode *vn, const struct vnode_ops *ops,
 	vn->vn_ops = ops;
 	vn->vn_refcount = 1;
 	vn->vn_opencount = 0;
+	vn->vn_countlock = lock_create("vnode-countlock");
+	if (vn->vn_countlock == NULL) {
+		return ENOMEM;
+	}
 	vn->vn_fs = fs;
 	vn->vn_data = fsdata;
 	return 0;
@@ -65,10 +69,14 @@ vnode_cleanup(struct vnode *vn)
 {
 	KASSERT(vn->vn_refcount==1);
 	KASSERT(vn->vn_opencount==0);
+	KASSERT(vn->vn_countlock!=NULL);
+
+	lock_destroy(vn->vn_countlock);
 
 	vn->vn_ops = NULL;
 	vn->vn_refcount = 0;
 	vn->vn_opencount = 0;
+	vn->vn_countlock = NULL;
 	vn->vn_fs = NULL;
 	vn->vn_data = NULL;
 }
@@ -81,13 +89,10 @@ vnode_cleanup(struct vnode *vn)
 void
 vnode_incref(struct vnode *vn)
 {
-	KASSERT(vn != NULL);
-
-	vfs_biglock_acquire();
-
+	KASSERT(vn!=NULL);
+	lock_acquire(vn->vn_countlock);
 	vn->vn_refcount++;
-
-	vfs_biglock_release();
+	lock_release(vn->vn_countlock);
 }
 
 /*
@@ -98,17 +103,21 @@ vnode_incref(struct vnode *vn)
 void
 vnode_decref(struct vnode *vn)
 {
-	int result;
+	int result, actually_do_it = 0;
 
 	KASSERT(vn != NULL);
 
-	vfs_biglock_acquire();
-
+	lock_acquire(vn->vn_countlock);
 	KASSERT(vn->vn_refcount>0);
 	if (vn->vn_refcount>1) {
 		vn->vn_refcount--;
 	}
 	else {
+		actually_do_it = 1;
+	}
+	lock_release(vn->vn_countlock);
+
+	if (actually_do_it) {
 		result = VOP_RECLAIM(vn);
 		if (result != 0 && result != EBUSY) {
 			// XXX: lame.
@@ -116,8 +125,6 @@ vnode_decref(struct vnode *vn)
 				strerror(result));
 		}
 	}
-
-	vfs_biglock_release();
 }
 
 /*
@@ -127,11 +134,10 @@ vnode_decref(struct vnode *vn)
 void
 vnode_incopen(struct vnode *vn)
 {
-	KASSERT(vn != NULL);
-
-	vfs_biglock_acquire();
+	KASSERT(vn!=NULL);
+	lock_acquire(vn->vn_countlock);
 	vn->vn_opencount++;
-	vfs_biglock_release();
+	lock_release(vn->vn_countlock);
 }
 
 /*
@@ -141,17 +147,16 @@ vnode_incopen(struct vnode *vn)
 void
 vnode_decopen(struct vnode *vn)
 {
-	int result;
+	int opencount, result;
 
-	KASSERT(vn != NULL);
-
-	vfs_biglock_acquire();
-
+	KASSERT(vn!=NULL);
+	lock_acquire(vn->vn_countlock);
 	KASSERT(vn->vn_opencount>0);
 	vn->vn_opencount--;
+	opencount = vn->vn_opencount;
+	lock_release(vn->vn_countlock);
 
-	if (vn->vn_opencount > 0) {
-		vfs_biglock_release();
+	if (opencount > 0) {
 		return;
 	}
 
@@ -162,8 +167,6 @@ vnode_decopen(struct vnode *vn)
 		// doesn't get reached...
 		kprintf("vfs: Warning: VOP_CLOSE: %s\n", strerror(result));
 	}
-
-	vfs_biglock_release();
 }
 
 /*
@@ -173,8 +176,6 @@ vnode_decopen(struct vnode *vn)
 void
 vnode_check(struct vnode *v, const char *opstr)
 {
-	vfs_biglock_acquire();
-
 	if (v == NULL) {
 		panic("vnode_check: vop_%s: null vnode\n", opstr);
 	}
@@ -202,6 +203,8 @@ vnode_check(struct vnode *v, const char *opstr)
 		panic("vnode_check: vop_%s: deadbeef fs pointer\n", opstr);
 	}
 
+	lock_acquire(v->vn_countlock);
+
 	if (v->vn_refcount < 0) {
 		panic("vnode_check: vop_%s: negative refcount %d\n", opstr,
 		      v->vn_refcount);
@@ -223,5 +226,5 @@ vnode_check(struct vnode *v, const char *opstr)
 			opstr, v->vn_opencount);
 	}
 
-	vfs_biglock_release();
+	lock_release(v->vn_countlock);
 }

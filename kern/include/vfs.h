@@ -120,6 +120,10 @@ int vfs_getcwd(struct uio *buf);
  *    vfs_bootstrap - Call during system initialization to allocate
  *                    structures.
  *
+ *    vfs_initbootfs - Call during system initialization to allocate
+ *                    bootfs-related structures. (Called from
+ *                    vfs_bootstrap.)
+ *
  *    vfs_setbootfs - Set the filesystem that paths beginning with a
  *                    slash are sent to. If not set, these paths fail
  *                    with ENOENT. The argument should be the device
@@ -161,6 +165,7 @@ int vfs_getcwd(struct uio *buf);
 
 void vfs_bootstrap(void);
 
+void vfs_initbootfs(void);
 int vfs_setbootfs(const char *fsname);
 void vfs_clearbootfs(void);
 
