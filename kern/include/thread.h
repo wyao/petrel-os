@@ -110,8 +110,6 @@ struct thread {
 
 	/* VFS */
 	struct vnode *t_cwd;		/* current working directory */
-	unsigned t_busy_buffers;    /* # of buffers currently using */
-	unsigned t_reserved_buffers;    /* # of buffers allowed to take */
 
 	/* add more here as needed */
 };

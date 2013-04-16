@@ -55,14 +55,14 @@ struct iovec {
 	 * exist in practice.
 	 */
 #ifdef _KERNEL
-	union {
-		userptr_t  iov_ubase;	/* user-supplied pointer */
-		void      *iov_kbase;	/* kernel-supplied pointer */
-	};
+        union {
+                userptr_t  iov_ubase;	/* user-supplied pointer */
+                void      *iov_kbase;	/* kernel-supplied pointer */
+        };
 #else
 	void *iov_base;			/* user-supplied pointer */
 #endif
-	size_t iov_len;			/* Length of data */
+        size_t iov_len;			/* Length of data */
 };
 
 #endif /* _KERN_IOVEC_H_ */

@@ -40,7 +40,6 @@
 #include <bitmap.h>
 #include <uio.h>
 #include <vfs.h>
-#include <buf.h>
 #include <device.h>
 #include <sfs.h>
 
@@ -51,10 +50,7 @@
 /*
  * Routine for doing I/O (reads or writes) on the free block bitmap.
  * We always do the whole bitmap at once; writing individual sectors
- * might or might not be a worthwhile optimization. Similarly, storing
- * the bitmap in the buffer cache might or might not be a worthwhile
- * optimization. (But that would require a total rewrite of the way
- * it's handled, so not now.)
+ * might or might not be a worthwhile optimization.
  *
  * The free block bitmap consists of SFS_BITBLOCKS 512-byte sectors of
  * bits, one bit for each sector on the filesystem. The number of
@@ -91,14 +87,10 @@ sfs_mapio(struct sfs_fs *sfs, enum uio_rw rw)
 
 		/* and read or write it. The bitmap starts at sector 2. */
 		if (rw == UIO_READ) {
-			result = sfs_readblock(&sfs->sfs_absfs,
-					       SFS_MAP_LOCATION + j,
-					       ptr, SFS_BLOCKSIZE);
+			result = sfs_rblock(sfs, ptr, SFS_MAP_LOCATION+j);
 		}
 		else {
-			result = sfs_writeblock(&sfs->sfs_absfs,
-						SFS_MAP_LOCATION + j,
-						ptr, SFS_BLOCKSIZE);
+			result = sfs_wblock(sfs, ptr, SFS_MAP_LOCATION+j);
 		}
 
 		/* If we failed, stop. */
@@ -119,6 +111,7 @@ int
 sfs_sync(struct fs *fs)
 {
 	struct sfs_fs *sfs;
+	unsigned i, num;
 	int result;
 
 	vfs_biglock_acquire();
@@ -155,22 +148,12 @@ sfs_sync(struct fs *fs)
 
 	sfs = fs->fs_data;
 
-	/* Sync the buffer cache */
-	result = sync_fs_buffers(fs);
-	if (result) {
-		vfs_biglock_release();
-		return result;
-	}
-
-#if 0	/* This is subsumed by sync_fs_buffers, plus would now be recursive */
-
 	/* Go over the array of loaded vnodes, syncing as we go. */
 	num = vnodearray_num(sfs->sfs_vnodes);
 	for (i=0; i<num; i++) {
 		struct vnode *v = vnodearray_get(sfs->sfs_vnodes, i);
 		VOP_FSYNC(v);
 	}
-#endif
 
 	/* If the free block map needs to be written, write it. */
 	if (sfs->sfs_freemapdirty) {
@@ -184,8 +167,7 @@ sfs_sync(struct fs *fs)
 
 	/* If the superblock needs to be written, write it. */
 	if (sfs->sfs_superdirty) {
-		result = sfs_writeblock(&sfs->sfs_absfs, SFS_SB_LOCATION,
-					&sfs->sfs_super, SFS_BLOCKSIZE);
+		result = sfs_wblock(sfs, &sfs->sfs_super, SFS_SB_LOCATION);
 		if (result) {
 			vfs_biglock_release();
 			return result;
@@ -315,21 +297,11 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		return ENOMEM;
 	}
 
-	/* Set the device so we can use sfs_readblock() */
+	/* Set the device so we can use sfs_rblock() */
 	sfs->sfs_device = dev;
 
-	/* Set up abstract fs calls */
-	sfs->sfs_absfs.fs_sync = sfs_sync;
-	sfs->sfs_absfs.fs_getvolname = sfs_getvolname;
-	sfs->sfs_absfs.fs_getroot = sfs_getroot;
-	sfs->sfs_absfs.fs_unmount = sfs_unmount;
-	sfs->sfs_absfs.fs_readblock = sfs_readblock;
-	sfs->sfs_absfs.fs_writeblock = sfs_writeblock;
-	sfs->sfs_absfs.fs_data = sfs;
-
 	/* Load superblock */
-	result = sfs_readblock(&sfs->sfs_absfs, SFS_SB_LOCATION,
-			       &sfs->sfs_super, SFS_BLOCKSIZE);
+	result = sfs_rblock(sfs, &sfs->sfs_super, SFS_SB_LOCATION);
 	if (result) {
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
@@ -374,6 +346,13 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		vfs_biglock_release();
 		return result;
 	}
+
+	/* Set up abstract fs calls */
+	sfs->sfs_absfs.fs_sync = sfs_sync;
+	sfs->sfs_absfs.fs_getvolname = sfs_getvolname;
+	sfs->sfs_absfs.fs_getroot = sfs_getroot;
+	sfs->sfs_absfs.fs_unmount = sfs_unmount;
+	sfs->sfs_absfs.fs_data = sfs;
 
 	/* the other fields */
 	sfs->sfs_superdirty = false;

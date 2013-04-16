@@ -100,34 +100,6 @@ syscall(struct trapframe *tf)
 	retval = 0;
 
 	switch (callno) {
-	    /* Assignment 4 system calls */
-	    case SYS_sync:
-		err = sys_sync();
-		break;
-	    case SYS_mkdir:
-		err = sys_mkdir((userptr_t)tf->tf_a0, tf->tf_a1);
-		break;
-	    case SYS_rmdir:
-		err = sys_rmdir((userptr_t)tf->tf_a0);
-		break;
-	    case SYS_remove:
-		err = sys_remove((userptr_t)tf->tf_a0);
-		break;
-	    case SYS_rename:
-		err = sys_rename((userptr_t)tf->tf_a0, (userptr_t)tf->tf_a1);
-		break;
-	    case SYS_getdirentry:
-		err = sys_getdirentry(tf->tf_a0, (userptr_t)tf->tf_a1,
-				      tf->tf_a2, &retval);
-		break;
-	    case SYS_fstat:
-		err = sys_fstat(tf->tf_a0, (userptr_t)tf->tf_a1);
-		break;
-	    case SYS_fsync:
-		err = sys_fsync(tf->tf_a0);
-		break;
-	    /* End of assignment 4 system calls */
-
 	    case SYS_reboot:
 		err = sys_reboot(tf->tf_a0);
 		break;

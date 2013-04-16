@@ -41,13 +41,13 @@
 #include <lamebus/lamebus.h>	/* for LAMEbus definitions */
 
 #define bus_write_register(bus, slot, offset, val) \
-	lamebus_write_register(bus, slot, offset, val)
+    lamebus_write_register(bus, slot, offset, val)
 
 #define bus_read_register(bus, slot, offset) \
-	lamebus_read_register(bus, slot, offset)
+    lamebus_read_register(bus, slot, offset)
 
 #define bus_map_area(bus, slot, offset) \
-	lamebus_map_area(bus, slot, offset)
+    lamebus_map_area(bus, slot, offset)
 
 /*
  * Machine-dependent LAMEbus definitions

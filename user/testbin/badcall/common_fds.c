@@ -177,19 +177,19 @@ runtest(int (*func)(int fd), void (*cleanup)(void), const char *callname)
 
 ////////////////////////////////////////////////////////////
 
-#define T(call)								\
-	void								\
-	test_##call##_fd(void)						\
-	{								\
-		runtest(call##_badfd, NULL, #call);			\
-	}
+#define T(call) \
+  void                                          \
+  test_##call##_fd(void)                        \
+  {                                             \
+   	runtest(call##_badfd, NULL, #call);     \
+  }
 
-#define TC(call)							\
-	void								\
-	test_##call##_fd(void)						\
-	{								\
-		runtest(call##_badfd, call##_cleanup, #call);		\
-	}
+#define TC(call) \
+  void                                          \
+  test_##call##_fd(void)                        \
+  {                                             \
+   	runtest(call##_badfd, call##_cleanup, #call);\
+  }
 
 T(read);
 T(write);

@@ -55,14 +55,6 @@ void enter_new_process(int argc, userptr_t argv, vaddr_t stackptr,
  * Prototypes for IN-KERNEL entry points for system call implementations.
  */
 
-int sys_sync(void);
-int sys_mkdir(userptr_t path, mode_t mode);
-int sys_rmdir(userptr_t path);
-int sys_remove(userptr_t path);
-int sys_rename(userptr_t oldpath, userptr_t newpath);
-int sys_getdirentry(int fd, userptr_t buf, size_t buflen, int *retval);
-int sys_fstat(int fd, userptr_t statptr);
-int sys_fsync(int fd);
 int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 
