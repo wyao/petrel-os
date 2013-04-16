@@ -50,9 +50,8 @@
 
 struct sfs_vnode {
 	struct vnode sv_v;              /* abstract vnode structure */
-	struct sfs_inode sv_i;		/* on-disk inode */
 	uint32_t sv_ino;                /* inode number */
-	bool sv_dirty;                  /* true if sv_i modified */
+	unsigned sv_type;		/* cache of sfi_type */
 };
 
 struct sfs_fs {
@@ -79,10 +78,9 @@ int sfs_mount(const char *device);
 #define SFSUIO(iov, uio, ptr, block, rw) \
     uio_kinit(iov, uio, ptr, SFS_BLOCKSIZE, ((off_t)(block))*SFS_BLOCKSIZE, rw)
 
-/* Convenience functions for block I/O */
-int sfs_rwblock(struct sfs_fs *sfs, struct uio *uio);
-int sfs_rblock(struct sfs_fs *sfs, void *data, uint32_t block);
-int sfs_wblock(struct sfs_fs *sfs, void *data, uint32_t block);
+/* Block I/O ops */
+int sfs_readblock(struct fs *fs, daddr_t block, void *data, size_t len);
+int sfs_writeblock(struct fs *fs, daddr_t block, void *data, size_t len);
 
 /* Get root vnode */
 struct vnode *sfs_getroot(struct fs *fs);

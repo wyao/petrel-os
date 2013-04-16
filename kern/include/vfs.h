@@ -192,5 +192,10 @@ void vfs_biglock_acquire(void);
 void vfs_biglock_release(void);
 bool vfs_biglock_do_i_hold(void);
 
+struct cv;
+void vfs_biglock_cv_wait(struct cv *);
+void vfs_biglock_cv_signal(struct cv *);
+void vfs_biglock_cv_broadcast(struct cv *);
+
 
 #endif /* _VFS_H_ */

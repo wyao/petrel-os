@@ -39,11 +39,12 @@
 //
 // Basic block-level I/O routines
 //
-// Note: sfs_rblock is used to read the superblock
+// Note: sfs_readblock is used to read the superblock
 // early in mount, before sfs is fully (or even mostly)
 // initialized, and so may not use anything from sfs
 // except sfs_device.
 
+static
 int
 sfs_rwblock(struct sfs_fs *sfs, struct uio *uio)
 {
@@ -87,20 +88,26 @@ sfs_rwblock(struct sfs_fs *sfs, struct uio *uio)
 }
 
 int
-sfs_rblock(struct sfs_fs *sfs, void *data, uint32_t block)
+sfs_readblock(struct fs *fs, daddr_t block, void *data, size_t len)
 {
+	struct sfs_fs *sfs = fs->fs_data;
 	struct iovec iov;
 	struct uio ku;
+
+	KASSERT(len == SFS_BLOCKSIZE);
 
 	SFSUIO(&iov, &ku, data, block, UIO_READ);
 	return sfs_rwblock(sfs, &ku);
 }
 
 int
-sfs_wblock(struct sfs_fs *sfs, void *data, uint32_t block)
+sfs_writeblock(struct fs *fs, daddr_t block, void *data, size_t len)
 {
+	struct sfs_fs *sfs = fs->fs_data;
 	struct iovec iov;
 	struct uio ku;
+
+	KASSERT(len == SFS_BLOCKSIZE);
 
 	SFSUIO(&iov, &ku, data, block, UIO_WRITE);
 	return sfs_rwblock(sfs, &ku);

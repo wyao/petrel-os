@@ -145,6 +145,31 @@ vfs_biglock_do_i_hold(void)
 	return lock_do_i_hold(vfs_biglock);
 }
 
+void
+vfs_biglock_cv_wait(struct cv *cv)
+{
+	unsigned depth;
+
+	/* Save the depth while we sleep */
+	depth = vfs_biglock_depth;
+	vfs_biglock_depth = 0;
+	cv_wait(cv, vfs_biglock);
+	KASSERT(vfs_biglock_depth == 0);
+	vfs_biglock_depth = depth;
+}
+
+void
+vfs_biglock_cv_signal(struct cv *cv)
+{
+	cv_signal(cv, vfs_biglock);
+}
+
+void
+vfs_biglock_cv_broadcast(struct cv *cv)
+{
+	cv_broadcast(cv, vfs_biglock);
+}
+
 /*
  * Global sync function - call FSOP_SYNC on all devices.
  */

@@ -352,6 +352,8 @@ file      vfs/vfslookup.c
 file      vfs/vfspath.c
 file      vfs/vnode.c
 
+file      vfs/buf.c
+
 #
 # VFS devices
 #
