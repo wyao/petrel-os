@@ -51,8 +51,6 @@ sfs_rwblock(struct sfs_fs *sfs, struct uio *uio)
 	int result;
 	int tries=0;
 
-	KASSERT(vfs_biglock_do_i_hold());
-
 	DEBUG(DB_SFS, "sfs: %s %llu\n",
 	      uio->uio_rw == UIO_READ ? "read" : "write",
 	      uio->uio_offset / SFS_BLOCKSIZE);

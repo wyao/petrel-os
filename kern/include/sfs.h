@@ -39,6 +39,7 @@
 /*
  * Get abstract structure definitions
  */
+#include <buf.h>
 #include <fs.h>
 #include <vnode.h>
 
@@ -52,6 +53,9 @@ struct sfs_vnode {
 	struct vnode sv_v;              /* abstract vnode structure */
 	uint32_t sv_ino;                /* inode number */
 	unsigned sv_type;		/* cache of sfi_type */
+	struct buf *sv_buf;     /* buffer holding inode info */
+	uint32_t sv_bufdepth;   /* how many currently interested in sv_buf */
+	struct lock *sv_lock;		/* lock for vnode */
 };
 
 struct sfs_fs {
@@ -62,6 +66,9 @@ struct sfs_fs {
 	struct vnodearray *sfs_vnodes;  /* vnodes loaded into memory */
 	struct bitmap *sfs_freemap;     /* blocks in use are marked 1 */
 	bool sfs_freemapdirty;          /* true if freemap modified */
+	struct lock *sfs_vnlock;	/* lock for vnode table */
+	struct lock *sfs_bitlock;	/* lock for bitmap/superblock */
+	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
 };
 
 /*
@@ -85,5 +92,8 @@ int sfs_writeblock(struct fs *fs, daddr_t block, void *data, size_t len);
 /* Get root vnode */
 struct vnode *sfs_getroot(struct fs *fs);
 
+/* Convenience functions */
+int sfs_load_inode(struct sfs_vnode *sv);
+void sfs_release_inode(struct sfs_vnode *sv);
 
 #endif /* _SFS_H_ */

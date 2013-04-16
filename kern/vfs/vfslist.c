@@ -119,64 +119,6 @@ vfs_bootstrap(void)
 }
 
 /*
- * Operations on vfs_biglock. We make it recursive to avoid having to
- * think about where we do and don't already hold it. This is an
- * undesirable hack that's frequently necessary when a lock covers too
- * much material.
- */
-
-void
-vfs_biglock_acquire(void)
-{
-	if (!lock_do_i_hold(vfs_biglock)) {
-		lock_acquire(vfs_biglock);
-	}
-	vfs_biglock_depth++;
-}
-
-void
-vfs_biglock_release(void)
-{
-	KASSERT(lock_do_i_hold(vfs_biglock));
-	KASSERT(vfs_biglock_depth > 0);
-	vfs_biglock_depth--;
-	if (vfs_biglock_depth == 0) {
-		lock_release(vfs_biglock);
-	}
-}
-
-bool
-vfs_biglock_do_i_hold(void)
-{
-	return lock_do_i_hold(vfs_biglock);
-}
-
-void
-vfs_biglock_cv_wait(struct cv *cv)
-{
-	unsigned depth;
-
-	/* Save the depth while we sleep */
-	depth = vfs_biglock_depth;
-	vfs_biglock_depth = 0;
-	cv_wait(cv, vfs_biglock);
-	KASSERT(vfs_biglock_depth == 0);
-	vfs_biglock_depth = depth;
-}
-
-void
-vfs_biglock_cv_signal(struct cv *cv)
-{
-	cv_signal(cv, vfs_biglock);
-}
-
-void
-vfs_biglock_cv_broadcast(struct cv *cv)
-{
-	cv_broadcast(cv, vfs_biglock);
-}
-
-/*
  * Global sync function - call FSOP_SYNC on all devices.
  */
 int

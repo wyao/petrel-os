@@ -57,6 +57,8 @@
 
 #include "disk.h"
 
+#define HAS_DIDIRECT 1
+#define HAS_TIDIRECT 1
 
 #define EXIT_USAGE    4
 #define EXIT_FATAL    3
@@ -211,16 +213,16 @@ blockusagestr(blockusage_t how, uint32_t howdesc)
 	    case B_SUPERBLOCK: return "superblock";
 	    case B_BITBLOCK: return "bitmap block";
 	    case B_INODE: return "inode";
-	    case B_IBLOCK:
-		snprintf(rv, sizeof(rv), "indirect block of inode %lu",
+	    case B_IBLOCK: 
+		snprintf(rv, sizeof(rv), "indirect block of inode %lu", 
 			 (unsigned long) howdesc);
 		break;
 	    case B_DIRDATA:
-		snprintf(rv, sizeof(rv), "directory data from inode %lu",
+		snprintf(rv, sizeof(rv), "directory data from inode %lu", 
 			 (unsigned long) howdesc);
 		break;
 	    case B_DATA:
-		snprintf(rv, sizeof(rv), "file data from inode %lu",
+		snprintf(rv, sizeof(rv), "file data from inode %lu", 
 			 (unsigned long) howdesc);
 		break;
 	    case B_TOFREE:
@@ -387,24 +389,25 @@ addmemory(uint32_t ino, uint32_t linkcount)
 {
 	assert(ninodes <= maxinodes);
 	if (ninodes == maxinodes) {
-#ifdef NO_REALLOC
 		int newmax = (maxinodes+1)*2;
-		void *p = domalloc(newmax * sizeof(struct inodememory));
+#ifdef NO_REALLOC
+		void *p = domalloc(newmax * sizeof(*inodes));
 		if (inodes) {
 			memcpy(p, inodes, ninodes);
 			free(inodes);
 		}
 		inodes = p;
 #else
-		maxinodes = (maxinodes+1)*2;
-		inodes = realloc(inodes, maxinodes * sizeof(uint32_t));
+		inodes = realloc(inodes, newmax * sizeof(*inodes));
 		if (inodes==NULL) {
 			errx(EXIT_FATAL, "Out of memory");
 		}
 #endif
+		maxinodes = newmax;
 	}
 	inodes[ninodes].ino = ino;
 	inodes[ninodes].linkcount = linkcount;
+	ninodes++;
 }
 
 /* returns nonzero if directory already remembered */
@@ -561,7 +564,7 @@ check_sb(void)
 static
 void
 check_indirect_block(uint32_t ino, uint32_t *ientry, uint32_t *blockp,
-		     uint32_t nblocks, uint32_t *badcountp,
+		     uint32_t nblocks, uint32_t *badcountp, 
 		     int isdir, int indirection)
 {
 	uint32_t entries[SFS_DBPERIDB];
@@ -580,8 +583,8 @@ check_indirect_block(uint32_t ino, uint32_t *ientry, uint32_t *blockp,
 
 	if (indirection > 1) {
 		for (i=0; i<SFS_DBPERIDB; i++) {
-			check_indirect_block(ino, &entries[i],
-					     blockp, nblocks,
+			check_indirect_block(ino, &entries[i], 
+					     blockp, nblocks, 
 					     badcountp,
 					     isdir,
 					     indirection-1);
@@ -655,46 +658,46 @@ check_inode_blocks(uint32_t ino, struct sfs_inode *sfi, int isdir)
 				badcount++;
 				bitmap_mark(sfi->sfi_direct[block],
 					    B_TOFREE, 0);
-			}
+			}			
 		}
 	}
 
 #ifdef SFS_NIDIRECT
 	for (i=0; i<SFS_NIDIRECT; i++) {
-		check_indirect_block(ino, &sfi->sfi_indirect[i],
+		check_indirect_block(ino, &sfi->sfi_indirect[i], 
 				     &block, nblocks, &badcount, isdir, 1);
 	}
 #else
-	check_indirect_block(ino, &sfi->sfi_indirect,
+	check_indirect_block(ino, &sfi->sfi_indirect, 
 			     &block, nblocks, &badcount, isdir, 1);
 #endif
 
 #ifdef SFS_NDIDIRECT
 	for (i=0; i<SFS_NDIDIRECT; i++) {
-		check_indirect_block(ino, &sfi->sfi_dindirect[i],
+		check_indirect_block(ino, &sfi->sfi_dindirect[i], 
 				     &block, nblocks, &badcount, isdir, 2);
 	}
 #else
 #ifdef HAS_DIDIRECT
-	check_indirect_block(ino, &sfi->sfi_dindirect,
+	check_indirect_block(ino, &sfi->sfi_dindirect, 
 			     &block, nblocks, &badcount, isdir, 2);
 #endif
 #endif
 
 #ifdef SFS_NTIDIRECT
 	for (i=0; i<SFS_NTIDIRECT; i++) {
-		check_indirect_block(ino, &sfi->sfi_tindirect[i],
+		check_indirect_block(ino, &sfi->sfi_tindirect[i], 
 				     &block, nblocks, &badcount, isdir, 3);
 	}
 #else
 #ifdef HAS_TIDIRECT
-	check_indirect_block(ino, &sfi->sfi_tindirect,
+	check_indirect_block(ino, &sfi->sfi_tindirect, 
 			     &block, nblocks, &badcount, isdir, 3);
 #endif
 #endif
 
 	if (badcount > 0) {
-		warnx("Inode %lu: %lu blocks after EOF (freed)",
+		warnx("Inode %lu: %lu blocks after EOF (freed)", 
 		     (unsigned long) ino, (unsigned long) badcount);
 		setbadness(EXIT_RECOV);
 		return 1;
@@ -991,7 +994,7 @@ check_dir(uint32_t ino, uint32_t parentino, const char *pathsofar)
 		setbadness(EXIT_RECOV);
 		warnx("Directory /%s has illegal size %lu (fixed)",
 		      pathsofar, (unsigned long) sfi.sfi_size);
-		sfi.sfi_size = SFS_ROUNDUP(sfi.sfi_size,
+		sfi.sfi_size = SFS_ROUNDUP(sfi.sfi_size, 
 					   sizeof(struct sfs_dir));
 		ichanged = 1;
 	}
@@ -1001,7 +1004,7 @@ check_dir(uint32_t ino, uint32_t parentino, const char *pathsofar)
 	}
 
 	ndirentries = sfi.sfi_size/sizeof(struct sfs_dir);
-	maxdirentries = SFS_ROUNDUP(ndirentries,
+	maxdirentries = SFS_ROUNDUP(ndirentries, 
 				    SFS_BLOCKSIZE/sizeof(struct sfs_dir));
 	dirsize = maxdirentries * sizeof(struct sfs_dir);
 	direntries = domalloc(dirsize);
@@ -1110,7 +1113,7 @@ check_dir(uint32_t ino, uint32_t parentino, const char *pathsofar)
 			      pathsofar);
 			dchanged = 1;
 		}
-		else if (dir_tryadd(direntries, maxdirentries, "..",
+		else if (dir_tryadd(direntries, maxdirentries, "..", 
 				    parentino)==0) {
 			setbadness(EXIT_RECOV);
 			warnx("Directory /%s: No `..' entry (added)",
@@ -1144,7 +1147,7 @@ check_dir(uint32_t ino, uint32_t parentino, const char *pathsofar)
 
 			diskread(&subsfi, direntries[i].sfd_ino);
 			swapinode(&subsfi);
-			snprintf(path, sizeof(path), "%s/%s",
+			snprintf(path, sizeof(path), "%s/%s", 
 				 pathsofar, direntries[i].sfd_name);
 
 			switch (subsfi.sfi_type) {
@@ -1152,7 +1155,7 @@ check_dir(uint32_t ino, uint32_t parentino, const char *pathsofar)
 				if (check_inode_blocks(direntries[i].sfd_ino,
 						       &subsfi, 0)) {
 					swapinode(&subsfi);
-					diskwrite(&subsfi,
+					diskwrite(&subsfi, 
 						  direntries[i].sfd_ino);
 				}
 				observe_filelink(direntries[i].sfd_ino);
