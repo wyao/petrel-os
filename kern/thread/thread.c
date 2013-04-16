@@ -198,6 +198,8 @@ thread_create(const char *name)
 
 	/* VFS fields */
 	thread->t_cwd = NULL;
+	thread->t_busy_buffers = 0;
+	thread->t_reserved_buffers = 0;
 
 	/* If you add to struct thread, be sure to initialize here */
 
@@ -310,6 +312,8 @@ thread_destroy(struct thread *thread)
 
 	/* VFS fields, cleaned up in thread_exit */
 	KASSERT(thread->t_cwd == NULL);
+	KASSERT(thread->t_busy_buffers == 0);
+	KASSERT(thread->t_reserved_buffers == 0);
 
 	/* VM fields, cleaned up in thread_exit */
 	KASSERT(thread->t_addrspace == NULL);
@@ -1011,6 +1015,8 @@ thread_exit(void)
 		VOP_DECREF(cur->t_cwd);
 		cur->t_cwd = NULL;
 	}
+	KASSERT(cur->t_busy_buffers == 0);
+	KASSERT(cur->t_reserved_buffers == 0);
 
 	/* VM fields */
 	if (cur->t_addrspace) {
