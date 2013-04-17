@@ -27,5 +27,5 @@ device random0 at lrandom*      # Abstract randomness device
 options sfs                     # Always use the file system
 #options netfs                  # Not until assignment 5 (if you choose it)
 
-options dumbvm                 # Use your own VM system now.
+#options dumbvm                 # Use your own VM system now.
 #options synchprobs             # No longer needed/wanted after asst. 1
