@@ -471,25 +471,25 @@ emufs_reclaim(struct vnode *v)
 	unsigned ix, i, num;
 	int result;
 
-	/*
-	 * Need both of these locks, e_lock to protect the device
-	 * and vfs_biglock to protect the fs-related material.
-	 */
-
-	vfs_biglock_acquire();
 	lock_acquire(ef->ef_emu->e_lock);
+	lock_acquire(ev->ev_v.vn_countlock);
 
 	if (ev->ev_v.vn_refcount != 1) {
+		lock_release(ev->ev_v.vn_countlock);
 		lock_release(ef->ef_emu->e_lock);
-		vfs_biglock_release();
 		return EBUSY;
 	}
+
+	/*
+	 * Since we hold e_lock and are the last ref, nobody can increment
+	 * the refcount, so we can release vn_countlock.
+	 */
+	lock_release(ev->ev_v.vn_countlock);
 
 	/* emu_close retries on I/O error */
 	result = emu_close(ev->ev_emu, ev->ev_handle);
 	if (result) {
 		lock_release(ef->ef_emu->e_lock);
-		vfs_biglock_release();
 		return result;
 	}
 
@@ -513,7 +513,6 @@ emufs_reclaim(struct vnode *v)
 	VOP_CLEANUP(&ev->ev_v);
 
 	lock_release(ef->ef_emu->e_lock);
-	vfs_biglock_release();
 
 	kfree(ev);
 	return 0;
@@ -1153,7 +1152,6 @@ emufs_loadvnode(struct emufs_fs *ef, uint32_t handle, int isdir,
 	unsigned i, num;
 	int result;
 
-	vfs_biglock_acquire();
 	lock_acquire(ef->ef_emu->e_lock);
 
 	num = vnodearray_num(ef->ef_vnodes);
@@ -1166,7 +1164,6 @@ emufs_loadvnode(struct emufs_fs *ef, uint32_t handle, int isdir,
 			VOP_INCREF(&ev->ev_v);
 
 			lock_release(ef->ef_emu->e_lock);
-			vfs_biglock_release();
 			*ret = ev;
 			return 0;
 		}
@@ -1187,7 +1184,6 @@ emufs_loadvnode(struct emufs_fs *ef, uint32_t handle, int isdir,
 			   &ef->ef_fs, ev);
 	if (result) {
 		lock_release(ef->ef_emu->e_lock);
-		vfs_biglock_release();
 		kfree(ev);
 		return result;
 	}
@@ -1197,13 +1193,11 @@ emufs_loadvnode(struct emufs_fs *ef, uint32_t handle, int isdir,
 		/* note: VOP_CLEANUP undoes VOP_INIT - it does not kfree */
 		VOP_CLEANUP(&ev->ev_v);
 		lock_release(ef->ef_emu->e_lock);
-		vfs_biglock_release();
 		kfree(ev);
 		return result;
 	}
 
 	lock_release(ef->ef_emu->e_lock);
-	vfs_biglock_release();
 
 	*ret = ev;
 	return 0;

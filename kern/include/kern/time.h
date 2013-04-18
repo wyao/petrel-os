@@ -41,13 +41,13 @@
  */
 
 struct timeval {
-	__time_t tv_sec;        /* seconds */
-	__i32 tv_usec;          /* microseconds */
+        __time_t tv_sec;        /* seconds */
+        __i32 tv_usec;          /* microseconds */
 };
 
 struct timespec {
-	__time_t tv_sec;        /* seconds */
-	__i32 tv_nsec;          /* nanoseconds */
+        __time_t tv_sec;        /* seconds */
+        __i32 tv_nsec;          /* nanoseconds */
 };
 
 
@@ -62,7 +62,7 @@ struct timespec {
 
 /* structure for setitimer/getitimer */
 struct itimerval {
-	struct timeval it_interval;	/* Time to reload after expiry. */
+        struct timeval it_interval;	/* Time to reload after expiry. */
 	struct timeval it_value;	/* Time to count. */
 };
 

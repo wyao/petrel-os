@@ -83,7 +83,9 @@ struct sfs_inode {
 	uint16_t sfi_linkcount;			/* # hard links to this file */
 	uint32_t sfi_direct[SFS_NDIRECT];	/* Direct blocks */
 	uint32_t sfi_indirect;			/* Indirect block */
-	uint32_t sfi_waste[128-3-SFS_NDIRECT];	/* unused space, set to 0 */
+	uint32_t sfi_dindirect;   /* Double indirect block */
+	uint32_t sfi_tindirect;   /* Triple indirect block */
+	uint32_t sfi_waste[128-5-SFS_NDIRECT];	/* unused space, set to 0 */
 };
 
 /*

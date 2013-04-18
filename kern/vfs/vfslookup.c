@@ -41,6 +41,16 @@
 #include <vnode.h>
 
 static struct vnode *bootfs_vnode = NULL;
+static struct lock *bootfs_lock = NULL;
+
+void
+vfs_initbootfs(void)
+{
+	bootfs_lock = lock_create("bootfs_lock");
+	if (bootfs_lock == NULL) {
+		panic("vfs: Could not create bootfs lock\n");
+	}
+}
 
 /*
  * Helper function for actually changing bootfs_vnode.
@@ -51,8 +61,10 @@ change_bootfs(struct vnode *newvn)
 {
 	struct vnode *oldvn;
 
+	lock_acquire(bootfs_lock);
 	oldvn = bootfs_vnode;
 	bootfs_vnode = newvn;
+	lock_release(bootfs_lock);
 
 	if (oldvn != NULL) {
 		VOP_DECREF(oldvn);
@@ -75,14 +87,11 @@ vfs_setbootfs(const char *fsname)
 	int result;
 	struct vnode *newguy;
 
-	vfs_biglock_acquire();
-
 	snprintf(tmp, sizeof(tmp)-1, "%s", fsname);
 	s = strchr(tmp, ':');
 	if (s) {
 		/* If there's a colon, it must be at the end */
 		if (strlen(s)>0) {
-			vfs_biglock_release();
 			return EINVAL;
 		}
 	}
@@ -92,19 +101,16 @@ vfs_setbootfs(const char *fsname)
 
 	result = vfs_chdir(tmp);
 	if (result) {
-		vfs_biglock_release();
 		return result;
 	}
 
 	result = vfs_getcurdir(&newguy);
 	if (result) {
-		vfs_biglock_release();
 		return result;
 	}
 
 	change_bootfs(newguy);
 
-	vfs_biglock_release();
 	return 0;
 }
 
@@ -114,9 +120,7 @@ vfs_setbootfs(const char *fsname)
 void
 vfs_clearbootfs(void)
 {
-	vfs_biglock_acquire();
 	change_bootfs(NULL);
-	vfs_biglock_release();
 }
 
 
@@ -132,8 +136,6 @@ getdevice(char *path, char **subpath, struct vnode **startvn)
 	int slash=-1, colon=-1, i;
 	struct vnode *vn;
 	int result;
-
-	KASSERT(vfs_biglock_do_i_hold());
 
 	/*
 	 * Locate the first colon or slash.
@@ -188,11 +190,14 @@ getdevice(char *path, char **subpath, struct vnode **startvn)
 	KASSERT(colon==0 || slash==0);
 
 	if (path[0]=='/') {
+		lock_acquire(bootfs_lock);
 		if (bootfs_vnode==NULL) {
+			lock_release(bootfs_lock);
 			return ENOENT;
 		}
 		VOP_INCREF(bootfs_vnode);
 		*startvn = bootfs_vnode;
+		lock_release(bootfs_lock);
 	}
 	else {
 		KASSERT(path[0]==':');
@@ -235,11 +240,8 @@ vfs_lookparent(char *path, struct vnode **retval,
 	struct vnode *startvn;
 	int result;
 
-	vfs_biglock_acquire();
-
 	result = getdevice(path, &path, &startvn);
 	if (result) {
-		vfs_biglock_release();
 		return result;
 	}
 
@@ -256,8 +258,6 @@ vfs_lookparent(char *path, struct vnode **retval,
 	}
 
 	VOP_DECREF(startvn);
-
-	vfs_biglock_release();
 	return result;
 }
 
@@ -267,23 +267,18 @@ vfs_lookup(char *path, struct vnode **retval)
 	struct vnode *startvn;
 	int result;
 
-	vfs_biglock_acquire();
-
 	result = getdevice(path, &path, &startvn);
 	if (result) {
-		vfs_biglock_release();
 		return result;
 	}
 
 	if (strlen(path)==0) {
 		*retval = startvn;
-		vfs_biglock_release();
 		return 0;
 	}
 
 	result = VOP_LOOKUP(startvn, path, retval);
 
 	VOP_DECREF(startvn);
-	vfs_biglock_release();
 	return result;
 }

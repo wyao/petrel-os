@@ -182,12 +182,12 @@ any_badpath(int (*func)(const char *path), const char *call, int mk, int rm)
 ////////////////////////////////////////////////////////////
 
 /* functions with one pathname */
-#define T(call)								\
-	void								\
-	test_##call##_path(void)					\
-	{								\
-		any_badpath(call##_badpath, #call, 0, 0);		\
-	}
+#define T(call) \
+  void                                  \
+  test_##call##_path(void)              \
+  {                                     \
+   	any_badpath(call##_badpath, #call, 0, 0); \
+  }
 
 T(open);
 T(remove);
@@ -200,12 +200,12 @@ T(lstat);
 
 /* functions with two pathnames */
 #define T2(call) \
-	void								\
-	test_##call##_paths(void)					\
-	{								\
-		any_badpath(call##_badpath1, #call "(arg1)", 0, 1);	\
-		any_badpath(call##_badpath2, #call "(arg2)", 1, 1);	\
-	}
+  void                                  \
+  test_##call##_paths(void)             \
+  {                                     \
+   	any_badpath(call##_badpath1, #call "(arg1)", 0, 1); \
+   	any_badpath(call##_badpath2, #call "(arg2)", 1, 1); \
+  }
 
 T2(rename);
 T2(link);

@@ -93,8 +93,8 @@ bswap64(uint64_t val)
 
 #if _BYTE_ORDER == _LITTLE_ENDIAN
 #define TO(tag, bits, type) \
-	type ntoh##tag(type val) { return bswap##bits(val);	} \
-	type hton##tag(type val) { return bswap##bits(val);	}
+    type ntoh##tag(type val) { return bswap##bits(val);	} \
+    type hton##tag(type val) { return bswap##bits(val);	}
 #endif
 
 /*
@@ -104,8 +104,8 @@ bswap64(uint64_t val)
  */
 #if _BYTE_ORDER == _BIG_ENDIAN
 #define TO(tag, bits, type) \
-	type ntoh##tag(type val) { return val; } \
-	type hton##tag(type val) { return val; }
+    type ntoh##tag(type val) { return val; } \
+    type hton##tag(type val) { return val; }
 #endif
 
 #if _BYTE_ORDER == _PDP_ENDIAN

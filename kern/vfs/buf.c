@@ -138,6 +138,13 @@ static unsigned num_valid_gets;
 static unsigned num_total_evictions;
 static unsigned num_dirty_evictions;
 
+static int doom_counter = -1;
+/*
+ * Lock
+ */
+
+static struct lock *buffer_lock;
+
 /*
  * CVs
  */
@@ -539,7 +546,7 @@ buffer_mark_busy(struct buf *b)
 {
 	KASSERT(b->b_holder != curthread);
 	while (b->b_busy) {
-		vfs_biglock_cv_wait(buffer_busy_cv);
+		cv_wait(buffer_busy_cv, buffer_lock);
 	}
 	b->b_busy = 1;
 	b->b_holder = curthread;
@@ -555,7 +562,7 @@ buffer_unmark_busy(struct buf *b)
 	KASSERT(b->b_busy != 0);
 	b->b_busy = 0;
 	b->b_holder = NULL;
-	vfs_biglock_cv_broadcast(buffer_busy_cv);
+	cv_broadcast(buffer_busy_cv, buffer_lock);
 }
 
 /*
@@ -567,6 +574,7 @@ buffer_readin(struct buf *b)
 {
 	int result;
 
+	KASSERT(lock_do_i_hold(buffer_lock));
 	KASSERT(b->b_attached);
 	KASSERT(b->b_busy);
 	KASSERT(b->b_fs != NULL);
@@ -575,22 +583,30 @@ buffer_readin(struct buf *b)
 		return 0;
 	}
 
+	lock_release(buffer_lock);
 	result = FSOP_READBLOCK(b->b_fs, b->b_physblock, b->b_data, b->b_size);
+	lock_acquire(buffer_lock);
 	if (result == 0) {
 		b->b_valid = 1;
 	}
 	return result;
 }
 
+void
+set_doom(int newval) {
+	doom_counter = newval;
+}
 /*
  * I/O: buffer to disk
+ *
+ * Note: releases lock to do I/O; busy bit should be set to protect
  */
 int
 buffer_writeout(struct buf *b)
 {
 	int result;
 
-	KASSERT(vfs_biglock_do_i_hold());
+	KASSERT(lock_do_i_hold(buffer_lock));
 	bufcheck();
 
 	KASSERT(b->b_attached);
@@ -602,7 +618,12 @@ buffer_writeout(struct buf *b)
 		return 0;
 	}
 
+	if (doom_counter > 0 && --doom_counter == 0) {
+		panic("DOOOOOOOOOOOOOOOOOM!!!!\n");
+	}
+	lock_release(buffer_lock);
 	result = FSOP_WRITEBLOCK(b->b_fs, b->b_physblock, b->b_data,b->b_size);
+	lock_acquire(buffer_lock);
 	if (result == 0) {
 		num_dirty_buffers--;
 		b->b_dirty = 0;
@@ -612,6 +633,8 @@ buffer_writeout(struct buf *b)
 
 /*
  * Fetch buffer pointer (external op)
+ *
+ * no lock necessary because of busy bit
  */
 void *
 buffer_map(struct buf *b)
@@ -637,6 +660,8 @@ buffer_mark_dirty(struct buf *b)
 	}
 
 	b->b_dirty = 1;
+
+	lock_acquire(buffer_lock);
 	num_dirty_buffers++;
 
 	/* Kick the syncer if enough buffers are dirty */
@@ -644,8 +669,9 @@ buffer_mark_dirty(struct buf *b)
 		(num_total_buffers * SYNCER_DIRTY_NUM) / SYNCER_DIRTY_DENOM;
 
 	if (num_dirty_buffers > enough_buffers) {
-		vfs_biglock_cv_signal(syncer_cv);
+		cv_signal(syncer_cv, buffer_lock);
 	}
+	lock_release(buffer_lock);
 }
 
 /*
@@ -890,6 +916,7 @@ buffer_evict(struct buf **ret)
 	if (b->b_dirty) {
 		num_dirty_evictions++;
 		KASSERT(b->b_busy == 0);
+		/* lock may be released here */
 		result = buffer_sync(b);
 		if (result) {
 			/* urgh... */
@@ -925,13 +952,14 @@ buffer_find(struct fs *fs, daddr_t physblock)
  * Find a buffer for the given block, if one already exists; otherwise
  * attach one but don't bother to read it in.
  */
+static
 int
-buffer_get(struct fs *fs, daddr_t block, size_t size, struct buf **ret)
+buffer_get_internal(struct fs *fs, daddr_t block, size_t size, struct buf **ret)
 {
 	struct buf *b;
 	int result;
 
-	KASSERT(vfs_biglock_do_i_hold());
+	KASSERT(lock_do_i_hold(buffer_lock));
 	bufcheck();
 
 	KASSERT(size == ONE_TRUE_BUFFER_SIZE);
@@ -981,6 +1009,21 @@ buffer_get(struct fs *fs, daddr_t block, size_t size, struct buf **ret)
 }
 
 /*
+ * Find a buffer for the given block, if one already exists; otherwise
+ * attach one but don't bother to read it in.
+ */
+int
+buffer_get(struct fs *fs, daddr_t block, size_t size, struct buf **ret)
+{
+	int result;
+	lock_acquire(buffer_lock);
+	result = buffer_get_internal(fs, block, size, ret);
+	lock_release(buffer_lock);
+
+	return result;
+}
+
+/*
  * Same as buffer_get but does a read so the resulting buffer always
  * contains valid data.
  */
@@ -989,22 +1032,28 @@ buffer_read(struct fs *fs, daddr_t block, size_t size, struct buf **ret)
 {
 	int result;
 
-	KASSERT(vfs_biglock_do_i_hold());
+	lock_acquire(buffer_lock);
 	bufcheck();
 
-	result = buffer_get(fs, block, size, ret);
+	result = buffer_get_internal(fs, block, size, ret);
 	if (result) {
+		lock_release(buffer_lock);
+		*ret = NULL;
 		return result;
 	}
 
 	if (!(*ret)->b_valid) {
+		/* may lose (and then re-acquire) lock here */
 		result = buffer_readin(*ret);
 		if (result) {
 			buffer_release(*ret);
+			lock_release(buffer_lock);
+			*ret = NULL;
 			return result;
 		}
 	}
 
+	lock_release(buffer_lock);
 	return 0;
 }
 
@@ -1017,7 +1066,7 @@ buffer_drop(struct fs *fs, daddr_t block, size_t size)
 {
 	struct buf *b;
 
-	KASSERT(vfs_biglock_do_i_hold());
+	lock_acquire(buffer_lock);
 	bufcheck();
 
 	KASSERT(size == ONE_TRUE_BUFFER_SIZE);
@@ -1036,15 +1085,14 @@ buffer_drop(struct fs *fs, daddr_t block, size_t size)
 		buffer_detach(b);
 		buffer_put_detached(b);
 	}
+	lock_release(buffer_lock);
 }
 
-/*
- * Let go of a buffer obtained with buffer_get or buffer_read.
- */
+static
 void
-buffer_release(struct buf *b)
+buffer_release_internal(struct buf *b)
 {
-	KASSERT(vfs_biglock_do_i_hold());
+	KASSERT(lock_do_i_hold(buffer_lock));
 	bufcheck();
 
 	buffer_get_busy(b);
@@ -1066,16 +1114,28 @@ buffer_release(struct buf *b)
 }
 
 /*
+ * Let go of a buffer obtained with buffer_get or buffer_read.
+ */
+void
+buffer_release(struct buf *b)
+{
+	lock_acquire(buffer_lock);
+	buffer_release_internal(b);
+	lock_release(buffer_lock);
+}
+
+/*
  * Same as buffer_release, but also invalidates the buffer.
  */
 void
 buffer_release_and_invalidate(struct buf *b)
 {
-	KASSERT(vfs_biglock_do_i_hold());
+	lock_acquire(buffer_lock);
 	bufcheck();
 
 	b->b_valid = 0;
-	buffer_release(b);
+	buffer_release_internal(b);
+	lock_release(buffer_lock);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1088,7 +1148,7 @@ sync_fs_buffers(struct fs *fs)
 	struct buf *b;
 	int result;
 
-	KASSERT(vfs_biglock_do_i_hold());
+	lock_acquire(buffer_lock);
 	bufcheck();
 
 	/* Don't cache the array size; it might change as we work. */
@@ -1099,8 +1159,10 @@ sync_fs_buffers(struct fs *fs)
 		}
 
 		if (b->b_dirty) {
+			/* lock may be released (and then re-acquired) here */
 			result = buffer_sync(b);
 			if (result) {
+				lock_release(buffer_lock);
 				return result;
 			}
 			j = b->b_tableindex;
@@ -1112,6 +1174,7 @@ sync_fs_buffers(struct fs *fs)
 		}
 	}
 
+	lock_release(buffer_lock);
 	return 0;
 }
 
@@ -1126,7 +1189,7 @@ sync_some_buffers(void)
 	struct buf *b;
 	int result;
 
-	KASSERT(vfs_biglock_do_i_hold());
+	KASSERT(lock_do_i_hold(buffer_lock));
 	bufcheck();
 
 	targetcount =
@@ -1144,6 +1207,7 @@ sync_some_buffers(void)
 			continue;
 		}
 		if (b->b_dirty) {
+			/* lock may be released (and then re-acquired) here */
 			result = buffer_sync(b);
 			if (result) {
 				kprintf("syncer: warning: %s\n",
@@ -1161,12 +1225,12 @@ syncer_thread(void *x1, unsigned long x2)
 	(void)x1;
 	(void)x2;
 
-	vfs_biglock_acquire();
+	lock_acquire(buffer_lock);
 	while (1) {
-		vfs_biglock_cv_wait(syncer_cv);
+		cv_wait(syncer_cv, buffer_lock);
 		sync_some_buffers();
 	}
-	vfs_biglock_release();
+	lock_release(buffer_lock);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1181,7 +1245,7 @@ syncer_thread(void *x1, unsigned long x2)
 void
 reserve_buffers(unsigned count, size_t size)
 {
-	KASSERT(vfs_biglock_do_i_hold());
+	lock_acquire(buffer_lock);
 	bufcheck();
 
 	KASSERT(size == ONE_TRUE_BUFFER_SIZE);
@@ -1190,10 +1254,11 @@ reserve_buffers(unsigned count, size_t size)
 	KASSERT(curthread->t_reserved_buffers == 0);
 
 	while (num_reserved_buffers + count > max_total_buffers) {
-		vfs_biglock_cv_wait(buffer_reserve_cv);
+		cv_wait(buffer_reserve_cv, buffer_lock);
 	}
 	num_reserved_buffers += count;
 	curthread->t_reserved_buffers = count;
+	lock_release(buffer_lock);
 }
 
 /*
@@ -1202,7 +1267,7 @@ reserve_buffers(unsigned count, size_t size)
 void
 unreserve_buffers(unsigned count, size_t size)
 {
-	KASSERT(vfs_biglock_do_i_hold());
+	lock_acquire(buffer_lock);
 	bufcheck();
 
 	KASSERT(size == ONE_TRUE_BUFFER_SIZE);
@@ -1212,9 +1277,10 @@ unreserve_buffers(unsigned count, size_t size)
 
 	curthread->t_reserved_buffers -= count;
 	num_reserved_buffers -= count;
-	vfs_biglock_cv_broadcast(buffer_reserve_cv);
+	cv_broadcast(buffer_reserve_cv, buffer_lock);
 
 	KASSERT(curthread->t_busy_buffers <= curthread->t_reserved_buffers);
+	lock_release(buffer_lock);
 }
 
 ////////////////////////////////////////////////////////////
@@ -1238,6 +1304,10 @@ buffer_bootstrap(void)
 		(mainbus_ramsize() * BUFFER_MAXMEM_NUM) / BUFFER_MAXMEM_DENOM;
 	max_total_buffers = max_buffer_mem / ONE_TRUE_BUFFER_SIZE;
 
+	kprintf("buffers: max count %lu; max size %luk\n",
+		(unsigned long) max_total_buffers,
+		(unsigned long) max_buffer_mem/1024);
+
 	num_total_gets = 0;
 	num_valid_gets = 0;
 	num_total_evictions = 0;
@@ -1252,6 +1322,11 @@ buffer_bootstrap(void)
 	result = bufhash_init(&buffer_hash, max_total_buffers/16);
 	if (result) {
 		panic("Creating buffer_hash failed\n");
+	}
+
+	buffer_lock = lock_create("buffer cache lock");
+	if (buffer_lock == NULL) {
+		panic("Creating buffer cache lock failed\n");
 	}
 
 	buffer_busy_cv = cv_create("bufbusy");

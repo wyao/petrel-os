@@ -157,9 +157,7 @@ vfs_getcwd(struct uio *uio)
 
 	name = FSOP_GETVOLNAME(cwd->vn_fs);
 	if (name==NULL) {
-		vfs_biglock_acquire();
 		name = vfs_getdevname(cwd->vn_fs);
-		vfs_biglock_release();
 	}
 	KASSERT(name != NULL);
 

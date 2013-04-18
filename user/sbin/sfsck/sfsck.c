@@ -57,6 +57,8 @@
 
 #include "disk.h"
 
+#define HAS_DIDIRECT 1
+#define HAS_TIDIRECT 1
 
 #define EXIT_USAGE    4
 #define EXIT_FATAL    3

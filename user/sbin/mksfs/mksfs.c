@@ -57,6 +57,9 @@
 
 #define MAXBITBLOCKS 32
 
+/* Block number for the initial root directory contents */
+static int rootdir_data_block;
+
 static
 void
 check(void)
@@ -90,14 +93,27 @@ void
 writerootdir(void)
 {
 	struct sfs_inode sfi;
+	struct sfs_dir sfd[SFS_BLOCKSIZE / sizeof(struct sfs_dir)];
+
+	assert(rootdir_data_block > 0);
+	assert(sizeof(sfd) >= sizeof(struct sfs_dir) * 2);
 
 	bzero((void *)&sfi, sizeof(sfi));
+	bzero((void *)sfd, sizeof(sfd));
 
-	sfi.sfi_size = SWAPL(0);
+	sfi.sfi_size = SWAPL(sizeof(struct sfs_dir) * 2);
 	sfi.sfi_type = SWAPS(SFS_TYPE_DIR);
-	sfi.sfi_linkcount = SWAPS(1);
+	sfi.sfi_linkcount = SWAPS(2);
+	sfi.sfi_direct[0] = SWAPL(rootdir_data_block);
 
 	diskwrite(&sfi, SFS_ROOT_LOCATION);
+
+	sfd[0].sfd_ino = SWAPL(SFS_ROOT_LOCATION);
+	strcpy(sfd[0].sfd_name, ".");
+	sfd[1].sfd_ino = SWAPL(SFS_ROOT_LOCATION);
+	strcpy(sfd[1].sfd_name, "..");
+
+	diskwrite(sfd, rootdir_data_block);
 }
 
 static char bitbuf[MAXBITBLOCKS*SFS_BLOCKSIZE];
@@ -133,6 +149,8 @@ writebitmap(uint32_t fsblocks)
 	for (i=0; i<nblocks; i++) {
 		doallocbit(SFS_MAP_LOCATION+i);
 	}
+	rootdir_data_block = SFS_MAP_LOCATION + nblocks;
+	doallocbit(rootdir_data_block);
 	for (i=fsblocks; i<nbits; i++) {
 		doallocbit(i);
 	}
@@ -186,8 +204,8 @@ main(int argc, char **argv)
 	size = diskblocks();
 
 	writesuper(volname, size);
-	writerootdir();
 	writebitmap(size);
+	writerootdir();
 
 	closedisk();
 

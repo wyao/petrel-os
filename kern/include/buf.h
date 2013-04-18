@@ -130,5 +130,7 @@ void unreserve_buffers(unsigned count, size_t size);
  */
 void buffer_bootstrap(void);
 
+/* Set the SFS doom (DOOOOOM!!!) counter! */
+void set_doom(int);
 
 #endif /* _BUF_H_ */
