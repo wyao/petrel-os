@@ -161,74 +161,86 @@ sys_rename(userptr_t oldpath, userptr_t newpath)
 	return err;
 }
 
+static int
+filetable_findfile(int fd, struct file_table *file) {
+	if (fd >= MAX_FILE_DESCRIPTOR) {
+		return EBADF;
+	}
+	file = curthread->fd[fd];
+	if (file == NULL) {
+		return EBADF;
+	}
+	return 0;
+}
+
+
 /*
  * getdirentry - call VOP_GETDIRENTRY
  */
 int
 sys_getdirentry(int fd, userptr_t buf, size_t buflen, int *retval)
 {
-    (void)fd;
-    (void)buf;
-    (void)buflen;
-    (void)retval;
-    return 0;
-/*
 	struct iovec iov;
 	struct uio useruio;
-	struct openfile *file;
+	struct file_table *file;
 	int err;
-*/
+
 
 	/* better be a valid file descriptor */
 
-/*
-	err = filetable_findfile(fd, &file);
+	err = filetable_findfile(fd, file); //TODO: Aidan, check if this is right
 	if (err) {
 		return err;
 	}
 
-	lock_acquire(file->of_lock);
-*/
+	lock_acquire(file->mutex);
+
 
 	/* Dirs shouldn't be openable for write at all, but be safe... */
-/*
-	if (file->of_accmode == O_WRONLY) {
-		lock_release(file->of_lock);
+
+	if (file->status == O_WRONLY) {
+		lock_release(file->mutex);
 		return EBADF;
 	}
-*/
+
 
 	/* set up a uio with the buffer, its size, and the current offset */
-/*
-	mk_useruio(&iov, &useruio, buf, buflen, file->of_offset, UIO_READ);
-*/
+	iov.iov_ubase = buf;
+	iov.iov_len = buflen;
+	useruio.uio_iov = &iov;
+	useruio.uio_iovcnt = 1;
+	useruio.uio_offset = file->offset;
+	useruio.uio_resid = buflen;
+	useruio.uio_segflg = UIO_USERSPACE;
+	useruio.uio_space = curthread->t_addrspace;
+
 
 	/* does the read */
-/*
-	err = VOP_GETDIRENTRY(file->of_vnode, &useruio);
+
+	err = VOP_GETDIRENTRY(file->file, &useruio);
 	if (err) {
-		lock_release(file->of_lock);
+		lock_release(file->mutex);
 		return err;
 	}
-*/
+
 
 	/* set the offset to the updated offset in the uio */
-/*
-	file->of_offset = useruio.uio_offset;
 
-	lock_release(file->of_lock);
-*/
+	file->offset = useruio.uio_offset;
+
+	lock_release(file->mutex);
+
 
 	/*
 	 * the amount read is the size of the buffer originally, minus
 	 * how much is left in it. Note: it is not correct to use
 	 * uio_offset for this!
 	 */
-/*
+
 	*retval = buflen - useruio.uio_resid;
 
 	return 0;
-*/
+
 }
 
 /*
@@ -237,33 +249,29 @@ sys_getdirentry(int fd, userptr_t buf, size_t buflen, int *retval)
 int
 sys_fstat(int fd, userptr_t statptr)
 {
-    (void)fd;
-    (void)statptr;
-    return 0;
-/*
 	struct stat kbuf;
-	struct openfile *file;
+	struct file_table *file;
 	int err;
 
-	err = filetable_findfile(fd, &file);
+	err = filetable_findfile(fd, file);
 	if (err) {
 		return err;
 	}
-*/
+
 
 	/*
 	 * No need to lock the openfile - it cannot disappear under us,
 	 * and we're not using any of its non-constant fields.
 	 */
 
-/*
-	err = VOP_STAT(file->of_vnode, &kbuf);
+
+	err = VOP_STAT(file->file, &kbuf);
 	if (err) {
 		return err;
 	}
 
 	return copyout(&kbuf, statptr, sizeof(struct stat));
-*/
+
 }
 
 /*
@@ -272,23 +280,20 @@ sys_fstat(int fd, userptr_t statptr)
 int
 sys_fsync(int fd)
 {
-	(void)fd;
-	return 0;
-/*
-	struct openfile *file;
+	struct file_table *file;
 	int err;
 
-	err = filetable_findfile(fd, &file);
+	err = filetable_findfile(fd, file);
 	if (err) {
 		return err;
 	}
-*/
+
 	/*
 	 * No need to lock the openfile - it cannot disappear under us,
 	 * and we're not using any of its non-constant fields.
 	 */
 
-/*
-	return VOP_FSYNC(file->of_vnode);
-*/
+
+	return VOP_FSYNC(file->file);
+
 }
