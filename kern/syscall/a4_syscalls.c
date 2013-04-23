@@ -162,12 +162,12 @@ sys_rename(userptr_t oldpath, userptr_t newpath)
 }
 
 static int
-filetable_findfile(int fd, struct file_table *file) {
+filetable_findfile(int fd, struct file_table **file) {
 	if (fd >= MAX_FILE_DESCRIPTOR) {
 		return EBADF;
 	}
-	file = curthread->fd[fd];
-	if (file == NULL) {
+	*file = curthread->fd[fd];
+	if (*file == NULL) {
 		return EBADF;
 	}
 	return 0;
@@ -188,7 +188,7 @@ sys_getdirentry(int fd, userptr_t buf, size_t buflen, int *retval)
 
 	/* better be a valid file descriptor */
 
-	err = filetable_findfile(fd, file); //TODO: Aidan, check if this is right
+	err = filetable_findfile(fd, &file); //TODO: Aidan, check if this is right
 	if (err) {
 		return err;
 	}
@@ -253,7 +253,7 @@ sys_fstat(int fd, userptr_t statptr)
 	struct file_table *file;
 	int err;
 
-	err = filetable_findfile(fd, file);
+	err = filetable_findfile(fd, &file);
 	if (err) {
 		return err;
 	}
@@ -283,7 +283,7 @@ sys_fsync(int fd)
 	struct file_table *file;
 	int err;
 
-	err = filetable_findfile(fd, file);
+	err = filetable_findfile(fd, &file);
 	if (err) {
 		return err;
 	}
