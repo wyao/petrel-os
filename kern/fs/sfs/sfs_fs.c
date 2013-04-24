@@ -48,6 +48,7 @@
 /* Shortcuts for the size macros in kern/sfs.h */
 #define SFS_FS_BITMAPSIZE(sfs)  SFS_BITMAPSIZE((sfs)->sfs_super.sp_nblocks)
 #define SFS_FS_BITBLOCKS(sfs)   SFS_BITBLOCKS((sfs)->sfs_super.sp_nblocks)
+#define SFS_JN_LOCATION(sfs)    SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1
 
 /*
  * Routine for doing I/O (reads or writes) on the free block bitmap.
@@ -260,26 +261,6 @@ sfs_unmount(struct fs *fs)
 	return 0;
 }
 
-static
-int
-sfs_journal_bootstrap(struct sfs_fs *sfs) {
-	unsigned i;
-	int result;
-	struct sfs_journal_super *jn_super;
-
-	// Reserve blocks for the journal
-	for (i=0; i<SFS_JOURNAL_SIZE+1; i++) {
-		bitmap_mark(sfs->sfs_freemap, i);
-	}
-
-	// Read from journal super block
-	result = sfs_readblock(&sfs->sfs_absfs, SFS_JOURNAL_SB_LOCATION,
-			       &jn_super, SFS_BLOCKSIZE);
-	if (result)
-		return result;
-
-	return 0;
-}
 
 /*
  * Mount routine.
@@ -440,24 +421,10 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		return result;
 	}
-	
+
 	/* the other fields */
 	sfs->sfs_superdirty = false;
 	sfs->sfs_freemapdirty = false;
-
-	// Bootstrap journal
-	result = sfs_journal_bootstrap(sfs);
-	if (result) {
-		lock_release(sfs->sfs_vnlock);
-		lock_release(sfs->sfs_bitlock);
-		lock_destroy(sfs->sfs_vnlock);
-		lock_destroy(sfs->sfs_bitlock);
-		lock_destroy(sfs->sfs_renamelock);
-		bitmap_destroy(sfs->sfs_freemap);
-		vnodearray_destroy(sfs->sfs_vnodes);
-		kfree(sfs);
-		return result;
-	}
 
 	/* Hand back the abstract fs */
 	*ret = &sfs->sfs_absfs;
@@ -466,6 +433,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	lock_release(sfs->sfs_bitlock);
 
 	return 0;
+
 }
 
 /*

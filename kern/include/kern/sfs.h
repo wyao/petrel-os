@@ -46,9 +46,7 @@
 #define SFS_ROOT_LOCATION  1            /* loc'n of the root dir inode */
 #define SFS_MAP_LOCATION   2            /* 1st block of the freemap */
 #define SFS_NOINO          0            /* inode # for free dir entry */
-#define SFS_JOURNAL_SB_LOCATION 2       /* location of journal super block */
-#define SFS_JOUNAL_RECORD_START 3       /* location of first record */
-#define SFS_JOURNAL_SIZE        128     /* number of records in the journal */
+#define SFS_JN_SIZE        128          /* number of journal blocks */
 
 /* Number of bits in a block */
 #define SFS_BLOCKBITS (SFS_BLOCKSIZE * CHAR_BIT)
@@ -70,7 +68,7 @@
 /*
  * On-disk journal superblock
  */
-struct sfs_journal_super {
+struct sfs_jn_summary {
 	uint32_t num_entries; // If zero, no recovery necessary
 };
 
