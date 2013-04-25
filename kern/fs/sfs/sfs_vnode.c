@@ -86,6 +86,13 @@ int sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 static
 int sfs_dotruncate(struct vnode *v, off_t len);
 
+/* Journaling functions -- bottom of file */
+unsigned next_transaction_id = 0;
+
+static
+struct transaction *
+create_transaction(void);
+
 ////////////////////////////////////////////////////////////
 //
 // Simple stuff
@@ -1407,6 +1414,9 @@ sfs_write(struct vnode *v, struct uio *uio)
 	int result;
 
 	KASSERT(uio->uio_rw==UIO_WRITE);
+
+	// TODO use following place holder
+	create_transaction();
 
 	lock_acquire(sv->sv_lock);
 	reserve_buffers(3, SFS_BLOCKSIZE);
@@ -3594,4 +3604,29 @@ sfs_getroot(struct fs *fs)
 	unreserve_buffers(1, SFS_BLOCKSIZE);
 
 	return &sv->sv_v;
+}
+
+/*
+ * Journaling functions
+ */
+
+static
+struct transaction *
+create_transaction(void) {
+	struct transaction *t = kmalloc(sizeof(struct transaction));
+	if (t == NULL) {
+		return NULL;
+	}
+
+	t->bufs = kmalloc(sizeof(struct array));
+	if (t->bufs == NULL) {
+		kfree(t);
+		return NULL;
+	}
+
+	lock_acquire(transaction_id_lock);
+	t->id = next_transaction_id;
+	next_transaction_id++;
+	lock_release(transaction_id_lock);
+	return t;
 }

@@ -81,10 +81,6 @@ struct sfs_jn_summary {
 };
 
 /*
- * On-disk record
- */
-
-/*
  * On-disk superblock
  */
 struct sfs_super {

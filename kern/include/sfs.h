@@ -42,12 +42,24 @@
 #include <buf.h>
 #include <fs.h>
 #include <vnode.h>
+#include <array.h>
 
 /*
  * Get on-disk structures and constants that are made available to
  * userland for the benefit of mksfs, dumpsfs, etc.
  */
 #include <kern/sfs.h>
+
+
+/*
+ * Tracks transaction
+ */
+struct lock *transaction_id_lock;
+
+struct transaction {
+	unsigned id;
+    struct array *bufs; /* buffer caches that the transaction has used */
+};
 
 struct sfs_vnode {
 	struct vnode sv_v;              /* abstract vnode structure */
