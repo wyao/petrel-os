@@ -151,6 +151,13 @@ writebitmap(uint32_t fsblocks)
 	}
 	rootdir_data_block = SFS_MAP_LOCATION + nblocks;
 	doallocbit(rootdir_data_block);
+
+	// Reserve journal
+	for (i=(uint32_t)rootdir_data_block+1;
+			i<(uint32_t)rootdir_data_block+1+SFS_JN_SIZE; i++) {
+		doallocbit(i);
+	}
+	// Mark junk
 	for (i=fsblocks; i<nbits; i++) {
 		doallocbit(i);
 	}
