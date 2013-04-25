@@ -47,6 +47,7 @@
 #include <device.h>
 #include <sfs.h>
 #include <current.h>
+#include <vm.h>
 
 /*
  * Locking protocol for sfs:
@@ -88,10 +89,14 @@ int sfs_dotruncate(struct vnode *v, off_t len);
 
 /* Journaling functions -- bottom of file */
 unsigned next_transaction_id = 0;
+unsigned log_buf_offset = 0;
 
 static
 struct transaction *
 create_transaction(void);
+
+static
+int record(struct record *r);
 
 ////////////////////////////////////////////////////////////
 //
@@ -1422,6 +1427,9 @@ sfs_write(struct vnode *v, struct uio *uio)
 	reserve_buffers(3, SFS_BLOCKSIZE);
 
 	result = sfs_io(sv, uio);
+
+	// TODO use following place holder & handle error
+	record(NULL);
 
 	unreserve_buffers(3, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
@@ -3629,4 +3637,20 @@ create_transaction(void) {
 	next_transaction_id++;
 	lock_release(transaction_id_lock);
 	return t;
+}
+
+static
+int record(struct record *r) {
+	KASSERT(sizeof(struct record) == RECORD_SIZE);
+
+	lock_acquire(log_buf_lock);
+	if (log_buf_offset == PAGE_SIZE) {
+		// TODO: flush, could fail here?
+		KASSERT(0);
+		log_buf_offset = 0;
+	}
+	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
+	log_buf_offset += sizeof(struct record);
+	lock_release(log_buf_lock);
+	return 0;
 }
