@@ -71,6 +71,59 @@ struct sfs_fs {
 	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
 };
 
+struct record {
+	uint32_t transaction_type;
+	uint32_t transaction_id;
+	union changed {
+		struct r_inode{
+			uint32_t inode_num; 
+			uint16_t id_lvl;
+			uint16_t set;
+			uint32_t offset;
+			uint32_t blockno;
+		} r_inode;
+		struct r_itype { 
+			uint32_t inode_num;
+			uint32_t type; 
+		} r_itype;
+		struct r_isize { 
+			uint32_t inode_num;
+			uint32_t size; 
+		} r_isize;
+		struct r_ilink { 
+			uint32_t inode_num;
+			uint32_t linkcount; 
+		} r_ilink;
+		struct r_directory {
+			uint32_t parent_inode;
+			uint32_t slot;
+			uint32_t inode;
+			char sfd_name[SFS_NAMELEN];
+		} r_directory;
+		struct r_bitmap {
+			uint32_t index;
+			uint32_t setting;
+		} r_bitmap;
+	} changed;
+};
+
+/* TODO declare:
+ *	in-memory journal (array of records)
+ *	lock for journal
+ *	bitmap for transaction numbers
+ *	count of active transactions (optional, we have bitmap)
+ *	lock for transaction bitmap/counter
+ */
+
+/* Helper methods */
+struct record *makerec_inode(uint32_t inode_num, uint16_t id_lvl, uint16_t set, uint32_t offset, uint32_t blockno);
+struct record *makerec_itype(uint32_t inode_num, uint32_t type);
+struct record *makerec_isize(uint32_t inode_num, uint32_t size);
+struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount);
+struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, char *sfd_name);
+struct record *makerec_bitmap(uint32_t index, uint32_t setting);
+
+
 /*
  * Function for mounting a sfs (calls vfs_mount)
  */

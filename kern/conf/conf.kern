@@ -457,3 +457,12 @@ file        syscall/exec.c
 file        arch/mips/vm/vm.c
 file        arch/mips/vm/coremap.c
 file        syscall/sbrk.c
+
+
+#########################################
+#					                    #
+#	   Assignment 4 code		        #
+#	   	      			                #
+#########################################
+
+file 		fs/sfs/sfs_record.c

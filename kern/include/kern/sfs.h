@@ -65,6 +65,14 @@
 #define SFS_TYPE_FILE     1
 #define SFS_TYPE_DIR      2
 
+/* Record change types */
+#define REC_INODE 0
+#define REC_ITYPE 1
+#define REC_ISIZE 2
+#define REC_ILINK 3
+#define REC_DIR 4
+#define REC_BITMAP 5
+
 /*
  * On-disk journal superblock
  */
@@ -75,32 +83,6 @@ struct sfs_jn_summary {
 /*
  * On-disk record
  */
-struct record {
-	uint32_t transaction_type;
-	uint32_t transaction_id;
-	union changed {
-		struct inode{
-			uint16_t id_lvl;
-			uint16_t set;
-			uint32_t offset;
-			uint32_t blockno;
-
-		} inode;
-		struct itype { uint32_t type; } itype;
-		struct isize { uint32_t size; } isize;
-		struct ilinkcount { uint32_t linkcount; } ilinkcount;
-		struct directory {
-			uint32_t parent_inode;
-			uint32_t slot;
-			uint32_t inode;
-			char sfd_name[SFS_NAMELEN];
-		} directory;
-		struct bitmap {
-			uint32_t index;
-			uint32_t setting;
-		} bitmap;
-	} changed;
-};
 
 /*
  * On-disk superblock
