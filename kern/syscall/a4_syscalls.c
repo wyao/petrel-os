@@ -213,6 +213,7 @@ sys_getdirentry(int fd, userptr_t buf, size_t buflen, int *retval)
 	useruio.uio_resid = buflen;
 	useruio.uio_segflg = UIO_USERSPACE;
 	useruio.uio_space = curthread->t_addrspace;
+	useruio.uio_rw = UIO_READ;
 
 
 	/* does the read */
