@@ -61,6 +61,8 @@ struct transaction {
     struct array *bufs; /* buffer caches that the transaction has used */
 };
 
+struct record *log_buf;
+
 struct sfs_vnode {
 	struct vnode sv_v;              /* abstract vnode structure */
 	uint32_t sv_ino;                /* inode number */
