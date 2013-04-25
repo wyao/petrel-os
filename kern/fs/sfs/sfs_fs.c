@@ -259,6 +259,7 @@ sfs_unmount(struct fs *fs)
 	kfree(sfs);
 
 	/* Destory journal objects */
+	lock_destroy(log_buf_lock);
 	lock_destroy(transaction_id_lock);
 	kfree(log_buf);
 
@@ -320,12 +321,18 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(log_buf);
 		return ENOMEM;
 	}
+	log_buf_lock = lock_create("log buffer lock");
+	if (log_buf_lock == NULL) {
+		lock_destroy(transaction_id_lock);
+		kfree(log_buf);
+		return ENOMEM;
+	}
 
 	/* Allocate object */
 	sfs = kmalloc(sizeof(struct sfs_fs));
 	if (sfs==NULL) {
-		kfree(transaction_id_lock);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return ENOMEM;
 	}
@@ -334,8 +341,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	sfs->sfs_vnodes = vnodearray_create();
 	if (sfs->sfs_vnodes == NULL) {
 		kfree(sfs);
-		kfree(transaction_id_lock);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return ENOMEM;
 	}
@@ -357,7 +364,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (sfs->sfs_vnlock == NULL) {
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return ENOMEM;
 	}
@@ -367,7 +375,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		lock_destroy(sfs->sfs_vnlock);
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return ENOMEM;
 	}
@@ -378,7 +387,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		lock_destroy(sfs->sfs_vnlock);
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return ENOMEM;
 	}
@@ -397,7 +407,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		lock_destroy(sfs->sfs_renamelock);
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return result;
 	}
@@ -416,7 +427,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		lock_destroy(sfs->sfs_renamelock);
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return EINVAL;
 	}
@@ -439,7 +451,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		lock_destroy(sfs->sfs_renamelock);
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return ENOMEM;
 	}
@@ -453,7 +466,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		bitmap_destroy(sfs->sfs_freemap);
 		vnodearray_destroy(sfs->sfs_vnodes);
 		kfree(sfs);
-		kfree(transaction_id_lock);
+		lock_destroy(log_buf_lock);
+		lock_destroy(transaction_id_lock);
 		kfree(log_buf);
 		return result;
 	}

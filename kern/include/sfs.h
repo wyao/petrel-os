@@ -55,6 +55,7 @@
  * Tracks transaction
  */
 struct lock *transaction_id_lock;
+struct lock *log_buf_lock;
 
 struct transaction {
 	unsigned id;
