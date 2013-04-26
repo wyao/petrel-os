@@ -86,10 +86,10 @@ struct sfs_fs {
 	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
 };
 
-#define RECORD_SIZE 32 /* bytes */
-/* 16 records live in a 512-byte block
- * 128 records live in page size journal buffer
- * 2048 records (16 filled buffers) live in 127 block journal
+#define RECORD_SIZE 128 /* bytes */
+/* 4 records live in a 512-byte block
+ * 32 records live in page size journal buffer
+ * 512 records (16 filled buffers) live in 128 block journal
  */
 
 struct record {
@@ -126,7 +126,7 @@ struct record {
 			uint32_t setting;
 		} r_bitmap;
 	} changed;
-	char pad[8];
+	char padding[48];
 };
 
 /* TODO declare:
