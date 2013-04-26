@@ -17,6 +17,7 @@
 #include <device.h>
 #include <sfs.h>
 #include <current.h>
+#include <copyinout.h>
 
 
 /* Return a record struct populated except for transaction ID field */
@@ -57,15 +58,25 @@ struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount){
 	}
 	return r;
 }
-/*struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, char *sfd_name){
+struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, char *sfd_name){
 	struct record *r = kmalloc(sizeof(struct record));
+	int i;
 	if (r != NULL){
 		r->transaction_type = REC_DIR;
-		struct r_directory s = {parent_inode, slot, inode, sfd_name};
-		r->changed.r_directory = s;
+		r->changed.r_directory.parent_inode = parent_inode;
+		r->changed.r_directory.slot = slot;
+		r->changed.r_directory.inode = inode;
+
+		for (i=0; i<SFS_NAMELEN; i++){
+			r->changed.r_directory.sfd_name[i] = sfd_name[i];
+			if (sfd_name[i] == 0)
+				break;
+		}
+		if (i >= SFS_NAMELEN) // Name was too long
+			kfree(r);
 	}
 	return r;
-}*/
+}
 struct record *makerec_bitmap(uint32_t index, uint32_t setting){
 	struct record *r = kmalloc(sizeof(struct record));
 	if (r != NULL){
