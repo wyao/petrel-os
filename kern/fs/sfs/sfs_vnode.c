@@ -188,6 +188,11 @@ sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock, struct buf **bufret)
 
 	result = bitmap_alloc(sfs->sfs_freemap, diskblock);
 	if (result) {
+		struct record *r = makerec_bitmap((uint32_t)result,1);
+		KASSERT(r->transaction_type == REC_BITMAP);
+		KASSERT((int)r->changed.r_bitmap.index == result);
+		KASSERT(r->changed.r_bitmap.setting == 1);
+
 		return result;
 	}
 	sfs->sfs_freemapdirty = true;
@@ -211,6 +216,12 @@ sfs_bfree(struct sfs_fs *sfs, uint32_t diskblock)
 {
 	lock_acquire(sfs->sfs_bitlock);
 	bitmap_unmark(sfs->sfs_freemap, diskblock);
+
+	struct record *r = makerec_bitmap(diskblock,0);
+	KASSERT(r->transaction_type == REC_BITMAP);
+	KASSERT(r->changed.r_bitmap.index == diskblock);
+	KASSERT(r->changed.r_bitmap.setting == 0);
+
 	sfs->sfs_freemapdirty = true;
 	lock_release(sfs->sfs_bitlock);
 }
@@ -263,6 +274,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 	uint32_t block, cur_block, next_block;
 	uint32_t idoff;
 	int result, indir, i;
+	struct record *r;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 	KASSERT(SFS_DBPERIDB * sizeof(*iddata) == SFS_BLOCKSIZE);
@@ -304,6 +316,11 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 
 			/* Remember what we allocated; mark inode dirty */
 			inodeptr->sfi_direct[fileblock] = block;
+
+			// Record for adding direct block
+			r = makerec_inode(sv->sv_ino,0,0,fileblock,block);
+			(void) r;
+
 			buffer_mark_dirty(sv->sv_buf);
 		}
 
@@ -366,14 +383,17 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 		if(indir == 3)
 		{
 			inodeptr->sfi_tindirect = next_block;
+			r = makerec_inode(sv->sv_ino,3,1,0,block);
 		}
 		else if(indir == 2)
 		{
 			inodeptr->sfi_dindirect = next_block;
+			r = makerec_inode(sv->sv_ino,2,1,0,block);
 		}
 		else if(indir == 1)
 		{
 			inodeptr->sfi_indirect = next_block;
+			r = makerec_inode(sv->sv_ino,1,1,0,block);
 		}
 		buffer_mark_dirty(sv->sv_buf);
 	} else {
@@ -437,6 +457,9 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 			}
 
 			iddata[idoff] = next_block;
+
+			r = makerec_inode(sv->sv_ino,i,0,idoff,next_block);
+
 			buffer_mark_dirty(kbuf);
 			buffer_release(kbuf);
 			kbuf = kbuf2;
@@ -729,6 +752,10 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio)
 	if (uio->uio_rw == UIO_WRITE &&
 	    uio->uio_offset > (off_t)inodeptr->sfi_size) {
 		inodeptr->sfi_size = uio->uio_offset;
+
+		struct record *r = makerec_isize(sv->sv_ino,uio->uio_offset);
+		(void) r;
+
 		buffer_mark_dirty(sv->sv_buf);
 	}
 	sfs_release_inode(sv);
@@ -989,6 +1016,7 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot)
 	int emptyslot = -1;
 	int result;
 	struct sfs_dir sd;
+	struct record *r;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 	
@@ -1018,6 +1046,8 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot)
 	sd.sfd_ino = ino;
 	strcpy(sd.sfd_name, name);
 
+	r = makerec_dir(sv->sv_ino,emptyslot,ino,name);
+
 	/* Hand back the slot, if so requested. */
 	if (slot) {
 		*slot = emptyslot;
@@ -1040,6 +1070,7 @@ int
 sfs_dir_unlink(struct sfs_vnode *sv, int slot)
 {
 	struct sfs_dir sd;
+	struct record *r;
 
 	// synchronous write with lock held...bleh
 	KASSERT(lock_do_i_hold(sv->sv_lock));
@@ -1047,6 +1078,8 @@ sfs_dir_unlink(struct sfs_vnode *sv, int slot)
 	/* Initialize a suitable directory entry... */
 	bzero(&sd, sizeof(sd));
 	sd.sfd_ino = SFS_NOINO;
+
+	r = makerec_dir(sv->sv_ino,slot,0,NULL);
 
 	/* ... and write it */
 	return sfs_writedir(sv, &sd, slot);
@@ -1685,6 +1718,7 @@ sfs_dotruncate(struct vnode *v, off_t len)
 	uint32_t idblock, baseblock, highblock, didblock, tidblock;
 	int result = 0, final_result = 0;
 	int id_hasnonzero = 0, did_hasnonzero = 0, tid_hasnonzero = 0;
+	struct record *r;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 
@@ -1703,6 +1737,8 @@ sfs_dotruncate(struct vnode *v, off_t len)
 		if (i >= blocklen && block != 0) {
 			sfs_bfree(sfs, block);
 			inodeptr->sfi_direct[i] = 0;
+
+			r = makerec_inode(sv->sv_ino,0,0,i,0);
 		}
 	}
 
@@ -1934,6 +1970,9 @@ sfs_dotruncate(struct vnode *v, off_t len)
 
 							int block = iddata[level1];
 							iddata[level1] = 0;
+
+							r = makerec_inode(sv->sv_ino,1,0,level1,0);
+
 							id_modified = 1;
 
 							sfs_bfree(sfs, block);
@@ -1953,6 +1992,7 @@ sfs_dotruncate(struct vnode *v, off_t len)
 						if(indir == 1)
 						{
 							inodeptr->sfi_indirect = 0;
+							r = makerec_inode(sv->sv_ino,1,1,0,0);
 						}
 						if(indir != 1)
 						{
@@ -1996,6 +2036,9 @@ sfs_dotruncate(struct vnode *v, off_t len)
 					if(indir == 2)
 					{
 						inodeptr->sfi_dindirect = 0;
+
+						r = makerec_inode(sv->sv_ino,2,1,0,0);
+
 						buffer_mark_dirty(sv->sv_buf);
 					}
 					if(indir == 3)
@@ -2030,6 +2073,8 @@ sfs_dotruncate(struct vnode *v, off_t len)
 				/* The whole triple indirect block is empty now; free it */
 				sfs_bfree(sfs, tidblock);
 				inodeptr->sfi_tindirect = 0;
+
+				r = makerec_inode(sv->sv_ino,3,1,0,0);
 			}
 			else if(tid_modified)
 			{
@@ -2044,6 +2089,8 @@ sfs_dotruncate(struct vnode *v, off_t len)
 
 	/* Set the file size */
 	inodeptr->sfi_size = len;
+
+	r = makerec_isize(sv->sv_ino,len);
 
 	/* Mark the inode dirty */
 	buffer_mark_dirty(sv->sv_buf);
@@ -2229,6 +2276,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	struct sfs_inode *new_inodeptr;
 	uint32_t ino;
 	int result;
+	struct record *r;
 
 	lock_acquire(sv->sv_lock);
 	
@@ -2306,6 +2354,8 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	/* Update the linkcount of the new file */
 	new_inodeptr->sfi_linkcount++;
 
+	r = makerec_ilink(sv->sv_ino,new_inodeptr->sfi_linkcount);
+
 	/* and consequently mark it dirty. */
 	buffer_mark_dirty(newguy->sv_buf);
 	sfs_release_inode(newguy);
@@ -2338,6 +2388,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	struct sfs_inode *inodeptr;
 	int slot;
 	int result, result2;
+	struct record *r;
 
 	KASSERT(file->vn_fs == dir->vn_fs);
 
@@ -2371,6 +2422,9 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	/* and update the link count, marking the inode dirty */
 	inodeptr = buffer_map(f->sv_buf);
 	inodeptr->sfi_linkcount++;
+
+	r = makerec_ilink(f->sv_ino,inodeptr->sfi_linkcount);
+
 	buffer_mark_dirty(f->sv_buf);
 
 	sfs_release_inode(f);
@@ -2403,6 +2457,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct sfs_inode *dir_inodeptr;
 	struct sfs_inode *new_inodeptr;
 	struct sfs_vnode *newguy;
+	struct record *r;
 
 	(void)mode;
 
@@ -2464,7 +2519,13 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
          */
 
 	new_inodeptr->sfi_linkcount += 2;
+
+	r = makerec_ilink(newguy->sv_ino, new_inodeptr->sfi_linkcount);
+
 	dir_inodeptr->sfi_linkcount++;
+
+	r = makerec_ilink(sv->sv_ino, dir_inodeptr->sfi_linkcount);
+
 	buffer_mark_dirty(newguy->sv_buf);
 	sfs_release_inode(newguy);
 	buffer_mark_dirty(sv->sv_buf);
@@ -2511,6 +2572,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 	struct sfs_inode *victim_inodeptr;
 	int result;
 	int slot;
+	struct record *r;
 
 	/* Cannot remove the . or .. entries from a directory! */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -2562,9 +2624,15 @@ sfs_rmdir(struct vnode *v, const char *name)
 	KASSERT(victim_inodeptr->sfi_linkcount==2);
 
 	dir_inodeptr->sfi_linkcount--;
+
+	r = makerec_ilink(sv->sv_ino,dir_inodeptr->sfi_linkcount);
+
 	buffer_mark_dirty(sv->sv_buf);
 
 	victim_inodeptr->sfi_linkcount -= 2;
+
+	r = makerec_ilink(victim->sv_ino,victim_inodeptr->sfi_linkcount);
+
 	buffer_mark_dirty(victim->sv_buf);
 	/* buffer released below */
 
@@ -2760,6 +2828,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	int result, result2;
 	struct sfs_dir sd;
 	int found_dir1;
+	struct record *r;
 
 	/* The VFS layer is supposed to enforce this */
 	KASSERT(absdir1->vn_fs == absdir2->vn_fs);
@@ -3061,8 +3130,14 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			KASSERT(dir2_inodeptr->sfi_linkcount > 1);
 			KASSERT(obj2_inodeptr->sfi_linkcount == 2);
 			dir2_inodeptr->sfi_linkcount--;
+
+			r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
+
 			buffer_mark_dirty(dir2->sv_buf);
 			obj2_inodeptr->sfi_linkcount -= 2;
+
+			r = makerec_ilink(obj2->sv_ino,obj2_inodeptr->sfi_linkcount);
+
 			buffer_mark_dirty(obj2->sv_buf);
 
 			/* ignore errors on this */
@@ -3084,6 +3159,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			/* Dispose of the file */
 			KASSERT(obj2_inodeptr->sfi_linkcount > 0);
 			obj2_inodeptr->sfi_linkcount--;
+
+			r = makerec_ilink(obj2->sv_ino,obj2_inodeptr->sfi_linkcount);
+
 			buffer_mark_dirty(obj2->sv_buf);
 		}
 
@@ -3105,12 +3183,18 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	bzero(&sd, sizeof(sd));
 	sd.sfd_ino = obj1->sv_ino;
 	strcpy(sd.sfd_name, name2);
+
+	r = makerec_dir(dir2->sv_ino,slot2,obj1->sv_ino,name2);
+
 	result = sfs_writedir(dir2, &sd, slot2);
 	if (result) {
 		goto out4;
 	}
 
 	obj1_inodeptr->sfi_linkcount++;
+
+	r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
+
 	buffer_mark_dirty(obj1->sv_buf);
 
 	if (obj1->sv_type == SFS_TYPE_DIR) {
@@ -3133,8 +3217,14 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			goto recover1;
 		}
 		dir1_inodeptr->sfi_linkcount--;
+
+		r = makerec_ilink(dir1->sv_ino,dir1_inodeptr->sfi_linkcount);
+
 		buffer_mark_dirty(dir1->sv_buf);
 		dir2_inodeptr->sfi_linkcount++;
+
+		r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
+
 		buffer_mark_dirty(dir2->sv_buf);
 	}
 
@@ -3143,6 +3233,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		goto recover2;
 	}
 	obj1_inodeptr->sfi_linkcount--;
+
+	r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
+
 	buffer_mark_dirty(obj1->sv_buf);
 
 	KASSERT(result==0);
@@ -3152,13 +3245,22 @@ sfs_rename(struct vnode *absdir1, const char *name1,
     recover2:
 		if (obj1->sv_type == SFS_TYPE_DIR) {
 			sd.sfd_ino = dir1->sv_ino;
+
+			r = makerec_dir(obj1->sv_ino,DOTDOTSLOT,sd.sfd_ino,sd.sfd_name);
+
 			result2 = sfs_writedir(obj1, &sd, DOTDOTSLOT);
 			if (result2) {
 				recovermsg(result, result2);
 			}
 			dir1_inodeptr->sfi_linkcount++;
+
+			r = makerec_ilink(dir1->sv_ino,dir1_inodeptr->sfi_linkcount);
+
 			buffer_mark_dirty(dir1->sv_buf);
 			dir2_inodeptr->sfi_linkcount--;
+
+			r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
+
 			buffer_mark_dirty(dir2->sv_buf);
 		}
     recover1:
@@ -3167,6 +3269,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			recovermsg(result, result2);
 		}
 		obj1_inodeptr->sfi_linkcount--;
+
+		r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
+
 		buffer_mark_dirty(obj1->sv_buf);
 	}
 
@@ -3448,6 +3553,7 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	struct sfs_inode *inodeptr;
 	unsigned i, num;
 	int result;
+	struct record *r;
 
 	/* sfs_vnlock protects the vnodes table */
 	lock_acquire(sfs->sfs_vnlock);
@@ -3528,6 +3634,9 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	if (forcetype != SFS_TYPE_INVAL) {
 		KASSERT(inodeptr->sfi_type == SFS_TYPE_INVAL);
 		inodeptr->sfi_type = forcetype;
+
+		r = makerec_itype(ino,forcetype);
+
 		buffer_mark_dirty(sv->sv_buf);
 	}
 

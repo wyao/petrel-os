@@ -142,7 +142,7 @@ struct record *makerec_inode(uint32_t inode_num, uint16_t id_lvl, uint16_t set, 
 struct record *makerec_itype(uint32_t inode_num, uint32_t type);
 struct record *makerec_isize(uint32_t inode_num, uint32_t size);
 struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount);
-struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, char *sfd_name);
+struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, const char *sfd_name);
 struct record *makerec_bitmap(uint32_t index, uint32_t setting);
 
 
