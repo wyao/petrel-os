@@ -58,7 +58,7 @@ struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount){
 	}
 	return r;
 }
-struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, char *sfd_name){
+struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, const char *sfd_name){
 	struct record *r = kmalloc(sizeof(struct record));
 	int i;
 	if (r != NULL){
