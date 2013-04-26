@@ -88,15 +88,22 @@ static
 int sfs_dotruncate(struct vnode *v, off_t len);
 
 /* Journaling functions -- bottom of file */
-unsigned next_transaction_id = 0;
-unsigned log_buf_offset = 0;
+int next_transaction_id = 0;
+int log_buf_offset = 0;
+int journal_offset = 0; // Updated only at commit
 
 static
 struct transaction *
 create_transaction(void);
 
 static
+int hold_buffer_cache(struct transaction *t, struct buf *buf);
+
+static
 int record(struct record *r);
+
+static
+int commit(struct transaction *t, struct fs *fs);
 
 ////////////////////////////////////////////////////////////
 //
@@ -3628,7 +3635,7 @@ create_transaction(void) {
 		return NULL;
 	}
 
-	t->bufs = kmalloc(sizeof(struct array));
+	t->bufs = array_create();
 	if (t->bufs == NULL) {
 		kfree(t);
 		return NULL;
@@ -3642,6 +3649,28 @@ create_transaction(void) {
 }
 
 static
+int hold_buffer_cache(struct transaction *t, struct buf *buf) {
+	unsigned i, num;
+	int result;
+
+	// Check if buf exists in t->bufs
+	num = array_num(t->bufs);
+	for(i=0; i<num; i++) {
+		if (array_get(t->bufs, i) == buf) {
+			return 0;
+		}
+	}
+	// Add buf to transaction
+	result = array_add(t->bufs, buf, NULL);
+	if (result) {
+		return result;
+	}
+	// TODO: increment buffer cache counter
+
+	return 0;
+}
+
+static
 int record(struct record *r) {
 	KASSERT(sizeof(struct record) == RECORD_SIZE);
 
@@ -3651,7 +3680,75 @@ int record(struct record *r) {
 		log_buf_offset = 0;
 	}
 	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
-	log_buf_offset += 1;
+	log_buf_offset++;
 	lock_release(log_buf_lock);
+	return 0;
+}
+
+// TODO: get rid of the MAGIC 4
+static
+int commit(struct transaction *t, struct fs *fs) {
+	int i, result, part;
+	unsigned ix;
+	struct record tmp[4];
+	// 3 for freemap, 1 for dir data, 1 for journal summary, TODO: fix 3
+	daddr_t block = (SFS_MAP_LOCATION + 3 + 1 + 1);
+
+	lock_acquire(log_buf_lock);
+	// Partial write
+	i = 0;
+	if (journal_offset % 4 != 0) { // TODO: if packing records, change this
+		part = journal_offset % 4;
+		// Read
+		result = sfs_readblock(fs, block + journal_offset,
+			tmp, SFS_BLOCKSIZE);
+		if (result) {
+			return result;
+		}
+		// Construct
+		memcpy(&tmp[part], (const void *)log_buf,
+			sizeof(struct record) * (4 - part));
+		// Write
+		result = sfs_writeblock(fs, block + journal_offset,
+			tmp, SFS_BLOCKSIZE);
+
+		if (log_buf_offset > part) {
+			i += part;
+			journal_offset += part;
+		}
+		else {
+			i += log_buf_offset;
+			journal_offset += log_buf_offset;
+		}
+	}
+	// Write full blocks
+	while (i<log_buf_offset-(log_buf_offset % 4)) {
+		result = sfs_writeblock(fs, block + journal_offset,
+			&log_buf[i], SFS_BLOCKSIZE);
+		if (result)
+			return result;
+		i += 4;
+		journal_offset += 4;
+	}
+	// Partial write TODO: make sure not at end of log_buf
+	if (log_buf_offset != i) {
+		result = sfs_writeblock(fs, block + journal_offset,
+			&log_buf[i], SFS_BLOCKSIZE);
+		if (result)
+			return result;
+		journal_offset += log_buf_offset - i;
+	}
+	// Clear log buf
+	log_buf_offset = 0;
+	lock_release(log_buf_lock);
+
+	// TODO: decrement buffer cache counter (this is why we need synch write)
+
+	// cleanup
+	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
+		array_remove(t->bufs, ix-1);
+	}
+	array_destroy(t->bufs);
+	kfree(t);
 	return 0;
 }
