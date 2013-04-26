@@ -1489,6 +1489,9 @@ sfs_write(struct vnode *v, struct uio *uio)
 
 	result = sfs_io(sv, uio, t);
 
+	hold_buffer_cache(t, NULL);
+	commit(t, v->vn_fs);
+
 	unreserve_buffers(3, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
 

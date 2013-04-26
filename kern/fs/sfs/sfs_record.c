@@ -67,13 +67,15 @@ struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode,
 		r->changed.r_directory.slot = slot;
 		r->changed.r_directory.inode = inode;
 
-		for (i=0; i<SFS_NAMELEN; i++){
-			r->changed.r_directory.sfd_name[i] = sfd_name[i];
-			if (sfd_name[i] == 0)
-				break;
+		if (sfd_name != NULL) {
+			for (i=0; i<SFS_NAMELEN; i++){
+				r->changed.r_directory.sfd_name[i] = sfd_name[i];
+				if (sfd_name[i] == 0)
+					break;
+			}
+			if (i >= SFS_NAMELEN) // Name was too long
+				kfree(r);
 		}
-		if (i >= SFS_NAMELEN) // Name was too long
-			kfree(r);
 	}
 	return r;
 }
