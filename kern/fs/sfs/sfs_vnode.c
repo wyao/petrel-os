@@ -1429,7 +1429,9 @@ sfs_write(struct vnode *v, struct uio *uio)
 	result = sfs_io(sv, uio);
 
 	// TODO use following place holder & handle error
-	record(NULL);
+	struct record *r = kmalloc(sizeof(struct record));
+	record(r);
+	kfree(r);
 
 	unreserve_buffers(3, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
@@ -3644,13 +3646,12 @@ int record(struct record *r) {
 	KASSERT(sizeof(struct record) == RECORD_SIZE);
 
 	lock_acquire(log_buf_lock);
-	if (log_buf_offset == PAGE_SIZE) {
+	if (log_buf_offset == PAGE_SIZE/RECORD_SIZE) {
 		// TODO: flush, could fail here?
-		KASSERT(0);
 		log_buf_offset = 0;
 	}
 	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
-	log_buf_offset += sizeof(struct record);
+	log_buf_offset += 1;
 	lock_release(log_buf_lock);
 	return 0;
 }
