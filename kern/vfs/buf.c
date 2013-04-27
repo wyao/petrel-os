@@ -1163,7 +1163,7 @@ sync_fs_buffers(struct fs *fs)
 			continue;
 		}
 
-		if (b->b_dirty) {
+		if (b->b_dirty && b->refcnt == 0) {
 			/* lock may be released (and then re-acquired) here */
 			result = buffer_sync(b);
 			if (result) {
@@ -1211,7 +1211,7 @@ sync_some_buffers(void)
 		if (b == NULL || b->b_busy) {
 			continue;
 		}
-		if (b->b_dirty) {
+		if (b->b_dirty && b->refcnt == 0) {
 			/* lock may be released (and then re-acquired) here */
 			result = buffer_sync(b);
 			if (result) {
