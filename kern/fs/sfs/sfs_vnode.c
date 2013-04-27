@@ -1427,6 +1427,8 @@ sfs_reclaim(struct vnode *v)
 	}
 	vnodearray_remove(sfs->sfs_vnodes, ix);
 
+	commit(t, v->vn_fs);
+
 	VOP_CLEANUP(&sv->sv_v);
 
 	lock_release(sfs->sfs_vnlock);
@@ -2164,6 +2166,8 @@ sfs_truncate(struct vnode *v, off_t len)
 
 	result = sfs_dotruncate(v, len, t);
 
+	commit(t, v->vn_fs);
+
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
 
@@ -2414,6 +2418,8 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 
 	*ret = &newguy->sv_v;
 
+	commit(t, v->vn_fs);
+
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(newguy->sv_lock);
 	lock_release(sv->sv_lock);
@@ -2484,6 +2490,8 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 		return log_ret;
 
 	buffer_mark_dirty(f->sv_buf);
+
+	commit(t, dir->vn_fs);
 
 	sfs_release_inode(f);
 	unreserve_buffers(4, SFS_BLOCKSIZE);
@@ -2602,6 +2610,8 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	lock_release(newguy->sv_lock);
 	lock_release(sv->sv_lock);
 	VOP_DECREF(&newguy->sv_v);
+
+	commit(t, v->vn_fs);
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
@@ -2810,6 +2820,9 @@ sfs_remove(struct vnode *dir, const char *name)
 
 	/* Discard the reference that sfs_lookonce got us */
 	VOP_DECREF(&victim->sv_v);
+
+	commit(t, dir->vn_fs);
+
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	lock_release(sv->sv_lock);
