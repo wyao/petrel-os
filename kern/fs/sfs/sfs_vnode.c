@@ -92,7 +92,7 @@ int next_transaction_id = 0;
 int log_buf_offset = 0;
 int journal_offset = 0; // Updated only at commit
 
-#define REC_PER_BLK (int) (SFS_BLOCKSIZE / (SFS_JN_SIZE - 1))
+#define REC_PER_BLK (int) (SFS_BLOCKSIZE / (RECORD_SIZE))
 
 static
 struct transaction *
@@ -4074,6 +4074,7 @@ void journal_iterator(struct fs *fs) {
 	for(i=0; i<SFS_JN_SIZE-1; i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
+		kprintf("Block: %d\n", i);
 		for (j=0; j<REC_PER_BLK; j++) {
 			kprintf("%d\n", r[j].transaction_id);
 		}
