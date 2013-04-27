@@ -3984,13 +3984,15 @@ int commit(struct transaction *t, struct fs *fs) {
 	daddr_t block = (SFS_MAP_LOCATION + 3 + 1 + 1);
 
 	lock_acquire(log_buf_lock);
+	sfs_readblock(fs, block + journal_offset / 4,
+		tmp, SFS_BLOCKSIZE);
 	if (log_buf_offset > 0) {
 		// Partial write
 		i = 0;
 		if (journal_offset % 4 != 0) { // TODO: if packing records, change this
 			part = journal_offset % 4;
 			// Read
-			result = sfs_readblock(fs, block + journal_offset - part,
+			result = sfs_readblock(fs, block + journal_offset / 4,
 				tmp, SFS_BLOCKSIZE);
 			if (result) {
 				return result;
@@ -3999,7 +4001,7 @@ int commit(struct transaction *t, struct fs *fs) {
 			memcpy(&tmp[part], (const void *)log_buf,
 				sizeof(struct record) * (4 - part));
 			// Write
-			result = sfs_writeblock(fs, block + journal_offset - part,
+			result = sfs_writeblock(fs, block + journal_offset / 4,
 				tmp, SFS_BLOCKSIZE);
 
 			if (log_buf_offset > 4 - part) {
@@ -4013,7 +4015,7 @@ int commit(struct transaction *t, struct fs *fs) {
 		}
 		// Write full blocks
 		while (i<log_buf_offset-(log_buf_offset % 4)) {
-			result = sfs_writeblock(fs, block + journal_offset,
+			result = sfs_writeblock(fs, block + journal_offset / 4,
 				&log_buf[i], SFS_BLOCKSIZE);
 			if (result)
 				return result;
@@ -4022,7 +4024,7 @@ int commit(struct transaction *t, struct fs *fs) {
 		}
 		// Partial write TODO: make sure not at end of log_buf
 		if (log_buf_offset != i) {
-			result = sfs_writeblock(fs, block + journal_offset,
+			result = sfs_writeblock(fs, block + journal_offset / 4,
 				&log_buf[i], SFS_BLOCKSIZE);
 			if (result)
 				return result;
@@ -4063,7 +4065,7 @@ void journal_iterator(struct fs *fs) {
 	struct record r[4];
 	daddr_t block = SFS_MAP_LOCATION + 3 + 1 + 1; // TODO: factor this
 
-	for(i=0; i<200 /* journal_offset */; i+=4) {
+	for(i=0; i<128 /* journal_offset */; i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
 		kprintf("%d\n", r->transaction_id);
