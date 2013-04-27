@@ -3972,12 +3972,12 @@ int commit(struct transaction *t, struct fs *fs) {
 			memcpy(&tmp[part], (const void *)log_buf,
 				sizeof(struct record) * (4 - part));
 			// Write
-			result = sfs_writeblock(fs, block + journal_offset,
+			result = sfs_writeblock(fs, block + journal_offset - part,
 				tmp, SFS_BLOCKSIZE);
 
-			if (log_buf_offset > part) {
-				i += part;
-				journal_offset += part;
+			if (log_buf_offset > 4 - part) {
+				i += 4 - part;
+				journal_offset += 4 - part;
 			}
 			else {
 				i += log_buf_offset;
