@@ -92,6 +92,8 @@ int next_transaction_id = 0;
 int log_buf_offset = 0;
 int journal_offset = 0; // Updated only at commit
 
+#define REC_PER_BLK (int) (SFS_BLOCKSIZE / (SFS_JN_SIZE - 1))
+
 static
 struct transaction *
 create_transaction(void);
@@ -1502,7 +1504,7 @@ sfs_write(struct vnode *v, struct uio *uio)
 	result = sfs_io(sv, uio, t);
 
 	result = commit(t, v->vn_fs);
-	if (result) {
+	if (result) { // TODO: abort?
 		panic("panic for now");
 	}
 
@@ -3980,34 +3982,37 @@ static
 int commit(struct transaction *t, struct fs *fs) {
 	int i, result, part;
 	unsigned ix;
-	struct record tmp[4];
 	// 3 for freemap, 1 for dir data, 1 for journal summary, TODO: fix 3
 	daddr_t block = (SFS_MAP_LOCATION + 3 + 1 + 1);
+	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
+	if (tmp == NULL) {
+		return ENOMEM;
+	}
 
 	lock_acquire(log_buf_lock);
-	sfs_readblock(fs, block + journal_offset / 4,
+	sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
 		tmp, SFS_BLOCKSIZE);
 	if (log_buf_offset > 0) {
 		// Partial write
 		i = 0;
-		if (journal_offset % 4 != 0) { // TODO: if packing records, change this
-			part = journal_offset % 4;
+		if (journal_offset % REC_PER_BLK != 0) { // TODO: if packing records, change this
+			part = journal_offset % REC_PER_BLK;
 			// Read
-			result = sfs_readblock(fs, block + journal_offset / 4,
+			result = sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
 				tmp, SFS_BLOCKSIZE);
 			if (result) {
-				return result;
+				goto err;
 			}
 			// Construct
 			memcpy(&tmp[part], (const void *)log_buf,
-				sizeof(struct record) * (4 - part));
+				sizeof(struct record) * (REC_PER_BLK - part));
 			// Write
-			result = sfs_writeblock(fs, block + journal_offset / 4,
+			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
 				tmp, SFS_BLOCKSIZE);
 
-			if (log_buf_offset > 4 - part) {
-				i += 4 - part;
-				journal_offset += 4 - part;
+			if (log_buf_offset > REC_PER_BLK - part) {
+				i += REC_PER_BLK - part;
+				journal_offset += REC_PER_BLK - part;
 			}
 			else {
 				i += log_buf_offset;
@@ -4015,37 +4020,40 @@ int commit(struct transaction *t, struct fs *fs) {
 			}
 		}
 		// Write full blocks
-		while (i<log_buf_offset-(log_buf_offset % 4)) {
-			result = sfs_writeblock(fs, block + journal_offset / 4,
+		while (i<log_buf_offset-(log_buf_offset % REC_PER_BLK)) {
+			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
 				&log_buf[i], SFS_BLOCKSIZE);
 			if (result)
-				return result;
-			i += 4;
-			journal_offset += 4;
+				goto err;
+			i += REC_PER_BLK;
+			journal_offset += REC_PER_BLK;
 		}
 		// Partial write TODO: make sure not at end of log_buf
 		if (log_buf_offset != i) {
-			result = sfs_writeblock(fs, block + journal_offset / 4,
+			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
 				&log_buf[i], SFS_BLOCKSIZE);
 			if (result)
-				return result;
+				goto err;
 			journal_offset += log_buf_offset - i;
 		}
 		// Clear log buf
 		log_buf_offset = 0;
 	}
+	// TODO: Update journal summary block
 	lock_release(log_buf_lock);
 
-	// TODO: decrement buffer cache counter (this is why we need synch write)
-
 	// cleanup
-	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
-		buf_decref((struct buf *)array_get(t->bufs, ix-1));
-		array_remove(t->bufs, ix-1);
-	}
-	array_destroy(t->bufs);
-	kfree(t);
-	return 0;
+	result = 0;
+
+	err:
+		for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
+			buf_decref((struct buf *)array_get(t->bufs, ix-1));
+			array_remove(t->bufs, ix-1);
+		}
+		array_destroy(t->bufs);
+		kfree(t);
+		kfree(tmp);
+		return result;
 }
 
 static
