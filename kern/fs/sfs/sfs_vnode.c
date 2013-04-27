@@ -4074,9 +4074,9 @@ void journal_iterator(struct fs *fs) {
 	for(i=0; i<SFS_JN_SIZE-1; i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
-		kprintf("Block: %d\n", i);
+		kprintf("\nBlock: %d\n", i);
 		for (j=0; j<REC_PER_BLK; j++) {
-			kprintf("%d\n", r[j].transaction_id);
+			kprintf("%d, ", r[j].transaction_id);
 		}
 	}
 }
