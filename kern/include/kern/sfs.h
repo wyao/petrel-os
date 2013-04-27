@@ -77,7 +77,7 @@
  * On-disk journal superblock
  */
 struct sfs_jn_summary {
-	uint32_t num_entries; // If zero, no recovery necessary
+	int32_t num_entries; // If zero, no recovery necessary
 };
 
 /*

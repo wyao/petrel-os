@@ -4072,11 +4072,14 @@ void journal_iterator(struct fs *fs) {
 	daddr_t block = SFS_MAP_LOCATION + 3 + 1 + 1; // TODO: factor this
 
 	for(i=0; i<SFS_JN_SIZE-1; i++) {
+		if (i%3 == 0)
+			kprintf("\n");
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
-		kprintf("\nBlock: %d\n", i);
+		kprintf("|Block %d: ", i);
 		for (j=0; j<REC_PER_BLK; j++) {
-			kprintf("%d, ", r[j].transaction_id);
+			kprintf("%d ", r[j].transaction_id);
 		}
 	}
+	kprintf("\n");
 }

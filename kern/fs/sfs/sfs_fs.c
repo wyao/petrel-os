@@ -267,6 +267,21 @@ sfs_unmount(struct fs *fs)
 	return 0;
 }
 
+/*
+ * Journal recovery routine
+ */
+static
+void recover(struct sfs_fs *sfs) {
+	daddr_t block = SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1;
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL)
+		panic("Cannot allocate memory for journal summary");
+	if (sfs_readblock(&sfs->sfs_absfs, block, s, SFS_BLOCKSIZE))
+		panic ("Reading of journal summary failed");
+
+	kprintf("Entries in journal during recorvery: %d\n", s->num_entries);
+	kfree(s);
+}
 
 /*
  * Mount routine.
@@ -475,6 +490,9 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	/* the other fields */
 	sfs->sfs_superdirty = false;
 	sfs->sfs_freemapdirty = false;
+
+	// Recovery
+	recover(sfs);
 
 	/* Hand back the abstract fs */
 	*ret = &sfs->sfs_absfs;
