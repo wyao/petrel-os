@@ -104,6 +104,7 @@ int record(struct record *r);
 
 static
 int commit(struct transaction *t, struct fs *fs);
+
 static
 int check_and_record(struct record *r, struct transaction *t);
 
@@ -1427,7 +1428,10 @@ sfs_reclaim(struct vnode *v)
 	}
 	vnodearray_remove(sfs->sfs_vnodes, ix);
 
-	commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	VOP_CLEANUP(&sv->sv_v);
 
@@ -1492,7 +1496,10 @@ sfs_write(struct vnode *v, struct uio *uio)
 	result = sfs_io(sv, uio, t);
 
 	hold_buffer_cache(t, NULL);
-	commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	unreserve_buffers(3, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
@@ -2166,7 +2173,10 @@ sfs_truncate(struct vnode *v, off_t len)
 
 	result = sfs_dotruncate(v, len, t);
 
-	commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
@@ -2418,7 +2428,10 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 
 	*ret = &newguy->sv_v;
 
-	commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(newguy->sv_lock);
@@ -2491,7 +2504,10 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 
 	buffer_mark_dirty(f->sv_buf);
 
-	commit(t, dir->vn_fs);
+	result = commit(t, dir->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	sfs_release_inode(f);
 	unreserve_buffers(4, SFS_BLOCKSIZE);
@@ -2611,7 +2627,10 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	lock_release(sv->sv_lock);
 	VOP_DECREF(&newguy->sv_v);
 
-	commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
@@ -2821,7 +2840,10 @@ sfs_remove(struct vnode *dir, const char *name)
 	/* Discard the reference that sfs_lookonce got us */
 	VOP_DECREF(&victim->sv_v);
 
-	commit(t, dir->vn_fs);
+	result = commit(t, dir->vn_fs);
+	if (result) {
+		panic("panic for now");
+	}
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
@@ -3925,6 +3947,7 @@ int record(struct record *r) {
 }
 
 // TODO: get rid of the MAGIC 4
+// TODO: track active transactions for checkpointing
 static
 int commit(struct transaction *t, struct fs *fs) {
 	int i, result, part;
@@ -3934,51 +3957,53 @@ int commit(struct transaction *t, struct fs *fs) {
 	daddr_t block = (SFS_MAP_LOCATION + 3 + 1 + 1);
 
 	lock_acquire(log_buf_lock);
-	// Partial write
-	i = 0;
-	if (journal_offset % 4 != 0) { // TODO: if packing records, change this
-		part = journal_offset % 4;
-		// Read
-		result = sfs_readblock(fs, block + journal_offset,
-			tmp, SFS_BLOCKSIZE);
-		if (result) {
-			return result;
-		}
-		// Construct
-		memcpy(&tmp[part], (const void *)log_buf,
-			sizeof(struct record) * (4 - part));
-		// Write
-		result = sfs_writeblock(fs, block + journal_offset,
-			tmp, SFS_BLOCKSIZE);
+	if (log_buf_offset > 0) {
+		// Partial write
+		i = 0;
+		if (journal_offset % 4 != 0) { // TODO: if packing records, change this
+			part = journal_offset % 4;
+			// Read
+			result = sfs_readblock(fs, block + journal_offset - part,
+				tmp, SFS_BLOCKSIZE);
+			if (result) {
+				return result;
+			}
+			// Construct
+			memcpy(&tmp[part], (const void *)log_buf,
+				sizeof(struct record) * (4 - part));
+			// Write
+			result = sfs_writeblock(fs, block + journal_offset,
+				tmp, SFS_BLOCKSIZE);
 
-		if (log_buf_offset > part) {
-			i += part;
-			journal_offset += part;
+			if (log_buf_offset > part) {
+				i += part;
+				journal_offset += part;
+			}
+			else {
+				i += log_buf_offset;
+				journal_offset += log_buf_offset;
+			}
 		}
-		else {
-			i += log_buf_offset;
-			journal_offset += log_buf_offset;
+		// Write full blocks
+		while (i<log_buf_offset-(log_buf_offset % 4)) {
+			result = sfs_writeblock(fs, block + journal_offset,
+				&log_buf[i], SFS_BLOCKSIZE);
+			if (result)
+				return result;
+			i += 4;
+			journal_offset += 4;
 		}
+		// Partial write TODO: make sure not at end of log_buf
+		if (log_buf_offset != i) {
+			result = sfs_writeblock(fs, block + journal_offset,
+				&log_buf[i], SFS_BLOCKSIZE);
+			if (result)
+				return result;
+			journal_offset += log_buf_offset - i;
+		}
+		// Clear log buf
+		log_buf_offset = 0;
 	}
-	// Write full blocks
-	while (i<log_buf_offset-(log_buf_offset % 4)) {
-		result = sfs_writeblock(fs, block + journal_offset,
-			&log_buf[i], SFS_BLOCKSIZE);
-		if (result)
-			return result;
-		i += 4;
-		journal_offset += 4;
-	}
-	// Partial write TODO: make sure not at end of log_buf
-	if (log_buf_offset != i) {
-		result = sfs_writeblock(fs, block + journal_offset,
-			&log_buf[i], SFS_BLOCKSIZE);
-		if (result)
-			return result;
-		journal_offset += log_buf_offset - i;
-	}
-	// Clear log buf
-	log_buf_offset = 0;
 	lock_release(log_buf_lock);
 
 	// TODO: decrement buffer cache counter (this is why we need synch write)
@@ -4003,4 +4028,19 @@ int check_and_record(struct record *r, struct transaction *t) {
 	if (ret)
 		return ret;
 	return 0;
+}
+
+void journal_iterator(struct fs *fs) {
+	int i;
+	struct record r[4];
+	daddr_t block = SFS_MAP_LOCATION + 3 + 1 + 1; // TODO: factor this
+
+	for(i=0; i<200 /* journal_offset */; i+=4) {
+		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
+			panic("Just panic");
+		kprintf("%d\n", r->transaction_id);
+		kprintf("%d\n", r[1].transaction_id);
+		kprintf("%d\n", r[2].transaction_id);
+		kprintf("%d\n", r[3].transaction_id);
+	}
 }

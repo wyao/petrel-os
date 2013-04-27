@@ -145,6 +145,7 @@ struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount);
 struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, const char *sfd_name);
 struct record *makerec_bitmap(uint32_t index, uint32_t setting);
 
+void journal_iterator(struct fs *fs);
 
 /*
  * Function for mounting a sfs (calls vfs_mount)

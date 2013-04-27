@@ -482,6 +482,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	lock_release(sfs->sfs_vnlock);
 	lock_release(sfs->sfs_bitlock);
 
+	journal_iterator(*ret);
 	return 0;
 
 }
