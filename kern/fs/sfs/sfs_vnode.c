@@ -3940,21 +3940,23 @@ int hold_buffer_cache(struct transaction *t, struct buf *buf) {
 	unsigned i, num;
 	int result;
 
-	// Check if buf exists in t->bufs
-	num = array_num(t->bufs);
-	for(i=0; i<num; i++) {
-		if (array_get(t->bufs, i) == buf) {
-			return 0;
+	// Make it compatible with read only operations
+	if (t != NULL) {
+		// Check if buf exists in t->bufs
+		num = array_num(t->bufs);
+		for(i=0; i<num; i++) {
+			if (array_get(t->bufs, i) == buf) {
+				return 0;
+			}
 		}
+		// Add buf to transaction
+		result = array_add(t->bufs, buf, NULL);
+		if (result) {
+			return result;
+		}
+		// Increase reference count
+		buf_incref(buf);
 	}
-	// Add buf to transaction
-	result = array_add(t->bufs, buf, NULL);
-	if (result) {
-		return result;
-	}
-	// Increase reference count
-	buf_incref(buf);
-
 	return 0;
 }
 
