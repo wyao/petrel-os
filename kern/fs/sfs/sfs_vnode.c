@@ -3976,7 +3976,6 @@ int record(struct record *r) {
 	return 0;
 }
 
-// TODO: get rid of the MAGIC 4
 // TODO: track active transactions for checkpointing
 static
 int commit(struct transaction *t, struct fs *fs) {
@@ -3990,12 +3989,10 @@ int commit(struct transaction *t, struct fs *fs) {
 	}
 
 	lock_acquire(log_buf_lock);
-	sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
-		tmp, SFS_BLOCKSIZE);
 	if (log_buf_offset > 0) {
 		// Partial write
 		i = 0;
-		if (journal_offset % REC_PER_BLK != 0) { // TODO: if packing records, change this
+		if (journal_offset % REC_PER_BLK != 0) {
 			part = journal_offset % REC_PER_BLK;
 			// Read
 			result = sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
@@ -4070,16 +4067,15 @@ int check_and_record(struct record *r, struct transaction *t) {
 }
 
 void journal_iterator(struct fs *fs) {
-	int i;
-	struct record r[4];
+	int i, j;
+	struct record *r = kmalloc(SFS_BLOCKSIZE);
 	daddr_t block = SFS_MAP_LOCATION + 3 + 1 + 1; // TODO: factor this
 
-	for(i=0; i<128 /* journal_offset */; i++) {
+	for(i=0; i<SFS_JN_SIZE-1; i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
-		kprintf("%d\n", r->transaction_id);
-		kprintf("%d\n", r[1].transaction_id);
-		kprintf("%d\n", r[2].transaction_id);
-		kprintf("%d\n", r[3].transaction_id);
+		for (j=0; j<REC_PER_BLK; j++) {
+			kprintf("%d\n", r[j].transaction_id);
+		}
 	}
 }
