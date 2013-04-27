@@ -4037,6 +4037,7 @@ int commit(struct transaction *t, struct fs *fs) {
 
 	// cleanup
 	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
+		buf_decref((struct buf *)array_get(t->bufs, ix-1));
 		array_remove(t->bufs, ix-1);
 	}
 	array_destroy(t->bufs);
