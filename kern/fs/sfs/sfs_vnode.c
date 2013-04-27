@@ -1501,7 +1501,6 @@ sfs_write(struct vnode *v, struct uio *uio)
 
 	result = sfs_io(sv, uio, t);
 
-	hold_buffer_cache(t, NULL);
 	result = commit(t, v->vn_fs);
 	if (result) {
 		panic("panic for now");
