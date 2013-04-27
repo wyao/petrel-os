@@ -94,6 +94,8 @@ int journal_offset = 0; // Updated only at commit
 
 #define REC_PER_BLK (int) (SFS_BLOCKSIZE / (RECORD_SIZE))
 #define BITBLOCKS(fs) SFS_BITBLOCKS(((struct sfs_fs*)fs->fs_data)->sfs_super.sp_nblocks)
+#define JN_SUMMARY_LOCATION(fs) SFS_MAP_LOCATION + BITBLOCKS(fs) + 1
+#define JN_LOCATION(fs) SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1
 
 static
 struct transaction *
@@ -3978,11 +3980,14 @@ int record(struct record *r) {
 }
 
 // TODO: track active transactions for checkpointing
+/*
+ * Synch note: log_buf_lock doubles as mutex lock for on disk journal
+ */
 static
 int commit(struct transaction *t, struct fs *fs) {
 	int i, result, part;
 	unsigned ix;
-	daddr_t block = (SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1);
+	daddr_t block = JN_LOCATION(fs);
 	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
 	if (tmp == NULL) {
 		return ENOMEM;
@@ -3998,6 +4003,7 @@ int commit(struct transaction *t, struct fs *fs) {
 			result = sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
 				tmp, SFS_BLOCKSIZE);
 			if (result) {
+				lock_release(log_buf_lock);
 				goto err;
 			}
 			// Construct
@@ -4020,8 +4026,10 @@ int commit(struct transaction *t, struct fs *fs) {
 		while (i<log_buf_offset-(log_buf_offset % REC_PER_BLK)) {
 			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
 				&log_buf[i], SFS_BLOCKSIZE);
-			if (result)
+			if (result) {
+				lock_release(log_buf_lock);
 				goto err;
+			}
 			i += REC_PER_BLK;
 			journal_offset += REC_PER_BLK;
 		}
@@ -4029,15 +4037,27 @@ int commit(struct transaction *t, struct fs *fs) {
 		if (log_buf_offset != i) {
 			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
 				&log_buf[i], SFS_BLOCKSIZE);
-			if (result)
+			if (result) {
+				lock_release(log_buf_lock);
 				goto err;
+			}
 			journal_offset += log_buf_offset - i;
 		}
 		// Clear log buf
 		log_buf_offset = 0;
 	}
-	// TODO: Update journal summary block
-	lock_release(log_buf_lock);
+	// Update journal summary block
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL) {
+		lock_release(log_buf_lock);
+		result = ENOMEM;
+		goto err;
+	}
+	s->num_entries = journal_offset; // TODO: write this upon failure?
+	sfs_writeblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
+	kfree(s);
+
+	lock_release(log_buf_lock); // This also act as on disk journal log here
 
 	// cleanup
 	result = 0;
@@ -4069,7 +4089,7 @@ int check_and_record(struct record *r, struct transaction *t) {
 void journal_iterator(struct fs *fs) {
 	int i, j;
 	struct record *r = kmalloc(SFS_BLOCKSIZE);
-	daddr_t block = SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1;
+	daddr_t block = JN_LOCATION(fs);
 
 	for(i=0; i<SFS_JN_SIZE-1; i++) {
 		if (i%3 == 0)
