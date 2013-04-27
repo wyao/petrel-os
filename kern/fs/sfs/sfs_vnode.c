@@ -93,6 +93,7 @@ int log_buf_offset = 0;
 int journal_offset = 0; // Updated only at commit
 
 #define REC_PER_BLK (int) (SFS_BLOCKSIZE / (RECORD_SIZE))
+#define BITBLOCKS(fs) SFS_BITBLOCKS(((struct sfs_fs*)fs->fs_data)->sfs_super.sp_nblocks)
 
 static
 struct transaction *
@@ -3981,8 +3982,7 @@ static
 int commit(struct transaction *t, struct fs *fs) {
 	int i, result, part;
 	unsigned ix;
-	// 3 for freemap, 1 for dir data, 1 for journal summary, TODO: fix 3
-	daddr_t block = (SFS_MAP_LOCATION + 3 + 1 + 1);
+	daddr_t block = (SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1);
 	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
 	if (tmp == NULL) {
 		return ENOMEM;
@@ -4069,7 +4069,7 @@ int check_and_record(struct record *r, struct transaction *t) {
 void journal_iterator(struct fs *fs) {
 	int i, j;
 	struct record *r = kmalloc(SFS_BLOCKSIZE);
-	daddr_t block = SFS_MAP_LOCATION + 3 + 1 + 1; // TODO: factor this
+	daddr_t block = SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1;
 
 	for(i=0; i<SFS_JN_SIZE-1; i++) {
 		if (i%3 == 0)
