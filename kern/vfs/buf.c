@@ -74,6 +74,8 @@ struct buf {
 	/* value */
 	void *b_data;
 	size_t b_size;
+
+	unsigned refcnt;
 };
 
 /*
@@ -495,6 +497,9 @@ buffer_create(void)
 	b->b_fs = NULL;
 	b->b_physblock = 0;
 	b->b_size = ONE_TRUE_BUFFER_SIZE;
+
+	b->refcnt = 0;
+
 	num_total_buffers++;
 	return b;
 }
@@ -1348,4 +1353,15 @@ buffer_bootstrap(void)
 	if (result) {
 		panic("Starting syncer failed\n");
 	}
+}
+
+
+unsigned buf_getref(struct buf *b){
+	return b->refcnt;
+}
+void buf_incref(struct buf *b){
+	b->refcnt++;
+}
+void buf_decref(struct buf *b){
+	b->refcnt--;
 }

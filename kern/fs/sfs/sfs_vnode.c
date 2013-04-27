@@ -303,6 +303,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 		return result;
 	}
 	inodeptr = buffer_map(sv->sv_buf);
+	hold_buffer_cache(t,sv->sv_buf);
 
 	/*
 	 * If the block we want is one of the direct blocks...
@@ -428,6 +429,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 	for(i = indir; i>0; i--)
 	{
 		iddata = buffer_map(kbuf);
+		hold_buffer_cache(t,kbuf);
 
 		/* Now adjust the file block so that it would look as if
 		 * we only have one branch of indirections (i.e. only a triple indirect block).
@@ -687,6 +689,10 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio, struct transaction *t)
 		return result;
 	}
 	inodeptr = buffer_map(sv->sv_buf);
+
+	if (uio->uio_rw == UIO_WRITE){
+		hold_buffer_cache(t,sv->sv_buf);
+	}
 
 	/*
 	 * If reading, check for EOF. If we can read a partial area,
@@ -1763,6 +1769,8 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 	}
 	inodeptr = buffer_map(sv->sv_buf);
 
+	hold_buffer_cache(t,sv->sv_buf);
+
 	/*
 	 * Go through the direct blocks. Discard any that are
 	 * past the limit we're truncating to.
@@ -1919,6 +1927,8 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 
 			ilevel3:
 			tiddata = buffer_map(tidbuf);
+			hold_buffer_cache(t,tidbuf);
+
 			for(level3 = 0; level3 < SFS_DBPERIDB; level3++)
 			{
 				if(blocklen >= baseblock +
@@ -1957,6 +1967,8 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 				 */
 				ilevel2:
 				diddata = buffer_map(didbuf);
+				hold_buffer_cache(t,didbuf);
+
 				for(level2 = 0; level2 < SFS_DBPERIDB; level2++)
 				{
 					/* Discard any blocks that are past the new EOF */
@@ -1997,6 +2009,8 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 					 */
 					ilevel1:
 					iddata = buffer_map(idbuf);
+					hold_buffer_cache(t,idbuf);
+
 					for (level1 = 0; level1<SFS_DBPERIDB; level1++)
 					{
 						/* Discard any blocks that are past the new EOF */
@@ -2399,6 +2413,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 		return result;
 	}
 	new_inodeptr = buffer_map(newguy->sv_buf);
+	hold_buffer_cache(t,newguy->sv_buf);
 
 	/* We don't currently support file permissions; ignore MODE */
 	(void)mode;
@@ -2495,6 +2510,8 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 
 	/* and update the link count, marking the inode dirty */
 	inodeptr = buffer_map(f->sv_buf);
+	hold_buffer_cache(t,f->sv_buf);
+
 	inodeptr->sfi_linkcount++;
 
 	r = makerec_ilink(f->sv_ino,inodeptr->sfi_linkcount);
@@ -2555,6 +2572,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 		goto die_early;
 	}
 	dir_inodeptr = buffer_map(sv->sv_buf);
+	hold_buffer_cache(t,sv->sv_buf);
 	
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
@@ -2578,6 +2596,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 		goto die_simple;
 	}
 	new_inodeptr = buffer_map(newguy->sv_buf);
+	hold_buffer_cache(t,newguy->sv_buf);
 
 	result = sfs_dir_link(newguy, ".", newguy->sv_ino, NULL, t);
 	if (result) {
@@ -2688,6 +2707,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 		goto die_early;
 	}
 	dir_inodeptr = buffer_map(sv->sv_buf);
+	hold_buffer_cache(t,sv->sv_buf);
 
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
@@ -2699,6 +2719,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 		goto die_simple;
 	}
 	victim_inodeptr = buffer_map(victim->sv_buf);
+	hold_buffer_cache(t,victim->sv_buf);
 
 	if (victim->sv_ino == SFS_ROOT_LOCATION) {
 		result = EPERM;
@@ -3144,6 +3165,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	if (result==0) {
 		KASSERT(obj2 != NULL);
 		obj2_inodeptr = buffer_map(obj2->sv_buf);
+		hold_buffer_cache(t,obj2->sv_buf);
 	} else if (result==ENOENT) {
 		/*
 		 * sfs_lookonce returns a null vnode and an empty slot
@@ -3192,18 +3214,21 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		goto out1;
 	}
 	obj1_inodeptr = buffer_map(obj1->sv_buf);
+	hold_buffer_cache(t,obj1->sv_buf);
 
 	result = sfs_load_inode(dir2);
 	if (result) {
 		goto out2;
 	}
 	dir2_inodeptr = buffer_map(dir2->sv_buf);
+	hold_buffer_cache(t,dir2->sv_buf);
 
 	result = sfs_load_inode(dir1);
 	if (result) {
 		goto out3;
 	}
 	dir1_inodeptr = buffer_map(dir1->sv_buf);
+	hold_buffer_cache(t,dir1->sv_buf);
 
 	/*
 	 * One final piece of paranoia: make sure dir2 hasn't been rmdir'd.
@@ -3781,6 +3806,7 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	}
 	/* we'll release this by hand */
 	inodeptr = buffer_map(sv->sv_buf);
+	hold_buffer_cache(t,sv->sv_buf);
 
 	/*
 	 * FORCETYPE is set if we're creating a new file, because the
@@ -3926,7 +3952,8 @@ int hold_buffer_cache(struct transaction *t, struct buf *buf) {
 	if (result) {
 		return result;
 	}
-	// TODO: increment buffer cache counter
+	// Increase reference count
+	buf_incref(buf);
 
 	return 0;
 }

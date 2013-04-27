@@ -133,4 +133,9 @@ void buffer_bootstrap(void);
 /* Set the SFS doom (DOOOOOM!!!) counter! */
 void set_doom(int);
 
+
+unsigned buf_getref(struct buf *b);
+void buf_incref(struct buf *b);
+void buf_decref(struct buf *b);
+
 #endif /* _BUF_H_ */
