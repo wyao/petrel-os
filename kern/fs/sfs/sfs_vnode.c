@@ -90,7 +90,6 @@ int sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t);
 /* Journaling functions -- bottom of file */
 int next_transaction_id = 0;
 int log_buf_offset = 0;
-int journal_offset = 0; // Updated only at commit
 
 #define REC_PER_BLK (int) (SFS_BLOCKSIZE / (RECORD_SIZE))
 #define BITBLOCKS(fs) SFS_BITBLOCKS(((struct sfs_fs*)fs->fs_data)->sfs_super.sp_nblocks)
@@ -3985,14 +3984,14 @@ int record(struct record *r) {
  */
 static
 int commit(struct transaction *t, struct fs *fs) {
-	int i, result, part;
-	unsigned ix;
+	int i, j, result, part;
+	unsigned ix, max;
 	daddr_t block = JN_LOCATION(fs);
 	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
 	if (tmp == NULL) {
 		return ENOMEM;
 	}
-
+	max = 0;
 	lock_acquire(log_buf_lock);
 	if (log_buf_offset > 0) {
 		// Partial write
@@ -4020,6 +4019,13 @@ int commit(struct transaction *t, struct fs *fs) {
 			else {
 				i += log_buf_offset;
 				journal_offset += log_buf_offset;
+
+			}
+			// Record max
+			for (j=0; j<i; j++) {
+				if (log_buf[j].transaction_id > max) {
+					max = log_buf[j].transaction_id;
+				}
 			}
 		}
 		// Write full blocks
@@ -4032,6 +4038,12 @@ int commit(struct transaction *t, struct fs *fs) {
 			}
 			i += REC_PER_BLK;
 			journal_offset += REC_PER_BLK;
+			// Record max
+			for (j=0; j<REC_PER_BLK; j++) {
+				if (log_buf[j].transaction_id > max) {
+					max = log_buf[j].transaction_id;
+				}
+			}
 		}
 		// Partial write TODO: make sure not at end of log_buf
 		if (log_buf_offset != i) {
@@ -4042,6 +4054,12 @@ int commit(struct transaction *t, struct fs *fs) {
 				goto err;
 			}
 			journal_offset += log_buf_offset - i;
+			// Record max
+			for (j=0; j< log_buf_offset - i; j++) {
+				if (log_buf[j].transaction_id > max) {
+					max = log_buf[j].transaction_id;
+				}
+			}
 		}
 		// Clear log buf
 		log_buf_offset = 0;
@@ -4053,7 +4071,10 @@ int commit(struct transaction *t, struct fs *fs) {
 		result = ENOMEM;
 		goto err;
 	}
-	s->num_entries = journal_offset; // TODO: write this upon failure?
+	sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
+	s->num_entries = journal_offset;
+	if (max > s->max_id)
+		s->max_id = max;
 	sfs_writeblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
 	kfree(s);
 
@@ -4099,7 +4120,7 @@ void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
 		panic("Cannot from journal summary");
 	entries = s->num_entries;
 	kfree(s);
-
+	kprintf("Num entries in journal: %d\n", entries);
 	// Pass it to function
 	for(i=0; i<(entries + entries % REC_PER_BLK)/REC_PER_BLK; i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))

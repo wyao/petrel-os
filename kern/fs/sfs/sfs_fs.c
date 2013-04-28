@@ -45,11 +45,12 @@
 #include <sfs.h>
 #include <synch.h>
 #include <vm.h>
+#include <bitmap.h>
 
 /* Shortcuts for the size macros in kern/sfs.h */
 #define SFS_FS_BITMAPSIZE(sfs)  SFS_BITMAPSIZE((sfs)->sfs_super.sp_nblocks)
 #define SFS_FS_BITBLOCKS(sfs)   SFS_BITBLOCKS((sfs)->sfs_super.sp_nblocks)
-#define SFS_JN_LOCATION(sfs)    SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1
+#define JN_SUMMARY_LOCATION(sfs)    SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1
 
 /* Journal prototype functions*/
 static
@@ -509,17 +510,24 @@ sfs_mount(const char *device)
 /*
  * Journal recovery routine
  */
+// static
+// void first_pass(struct record *r, struct bitmap *b) {
+// 	(void)b;
+// }
+
 static
 void recover(struct sfs_fs *sfs) {
-	daddr_t block = SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1;
+	// Construct bitmap
 	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
 	if (s == NULL)
 		panic("Cannot allocate memory for journal summary");
-	if (sfs_readblock(&sfs->sfs_absfs, block, s, SFS_BLOCKSIZE))
-		panic ("Reading of journal summary failed");
+	if (sfs_readblock(&sfs->sfs_absfs, JN_SUMMARY_LOCATION(sfs), s, SFS_BLOCKSIZE))
+		panic("Cannot from journal summary");
+	// struct bitmap *b = bitmap_create((unsigned)s->max_id);
+	kprintf("max id: %d\n", s->max_id);
+	// First pass
+	// journal_iterator(&sfs->sfs_absfs, first_pass(b));
 
-	kprintf("Entries in journal during recorvery: %d\n", s->num_entries);
-	journal_offset = s->num_entries; // TODO this should be 0;
 	kfree(s);
 }
 

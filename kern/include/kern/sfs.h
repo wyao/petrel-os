@@ -78,6 +78,7 @@
  */
 struct sfs_jn_summary {
 	int32_t num_entries; // If zero, no recovery necessary
+	uint32_t max_id;
 };
 
 /*
