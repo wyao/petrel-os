@@ -51,6 +51,13 @@
 #define SFS_FS_BITBLOCKS(sfs)   SFS_BITBLOCKS((sfs)->sfs_super.sp_nblocks)
 #define SFS_JN_LOCATION(sfs)    SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1
 
+/* Journal prototype functions*/
+static
+void recover(struct sfs_fs *sfs);
+
+static
+void print_transaction(struct record *r);
+
 /*
  * Routine for doing I/O (reads or writes) on the free block bitmap.
  * We always do the whole bitmap at once; writing individual sectors
@@ -265,22 +272,6 @@ sfs_unmount(struct fs *fs)
 
 	/* nothing else to do */
 	return 0;
-}
-
-/*
- * Journal recovery routine
- */
-static
-void recover(struct sfs_fs *sfs) {
-	daddr_t block = SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1;
-	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
-	if (s == NULL)
-		panic("Cannot allocate memory for journal summary");
-	if (sfs_readblock(&sfs->sfs_absfs, block, s, SFS_BLOCKSIZE))
-		panic ("Reading of journal summary failed");
-
-	kprintf("Entries in journal during recorvery: %d\n", s->num_entries);
-	kfree(s);
 }
 
 /*
@@ -500,7 +491,7 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	lock_release(sfs->sfs_vnlock);
 	lock_release(sfs->sfs_bitlock);
 
-	journal_iterator(*ret);
+	journal_iterator(*ret, print_transaction);
 	return 0;
 
 }
@@ -513,4 +504,62 @@ int
 sfs_mount(const char *device)
 {
 	return vfs_mount(device, NULL, sfs_domount);
+}
+
+/*
+ * Journal recovery routine
+ */
+static
+void recover(struct sfs_fs *sfs) {
+	daddr_t block = SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1;
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL)
+		panic("Cannot allocate memory for journal summary");
+	if (sfs_readblock(&sfs->sfs_absfs, block, s, SFS_BLOCKSIZE))
+		panic ("Reading of journal summary failed");
+
+	kprintf("Entries in journal during recorvery: %d\n", s->num_entries);
+	journal_offset = s->num_entries; // TODO this should be 0;
+	kfree(s);
+}
+
+static
+void print_transaction(struct record *r) {
+	kprintf("%d", r->transaction_id);
+	if (r->transaction_type == REC_INODE) {
+		kprintf("\tINODE");
+		kprintf("\ti_num: %d", r->changed.r_inode.inode_num);
+		kprintf("\tlvl: %d", r->changed.r_inode.id_lvl);
+		kprintf("\tset: %d", r->changed.r_inode.set);
+		kprintf("\toffset: %d", r->changed.r_inode.offset);
+		kprintf("\tblockno: %d", r->changed.r_inode.blockno);
+	}
+	else if(r->transaction_type == REC_ITYPE){
+		kprintf("\tTYPE");
+		kprintf("\ti_num: %d", r->changed.r_itype.inode_num);
+		kprintf("\ttype: %d", r->changed.r_itype.type);
+	}
+	else if(r->transaction_type == REC_ISIZE){
+		kprintf("\tSIZE");
+		kprintf("\ti_num: %d", r->changed.r_isize.inode_num);
+		kprintf("\tsize: %d", r->changed.r_isize.size);
+	}
+	else if(r->transaction_type == REC_ILINK){
+		kprintf("\tLINK");
+		kprintf("\ti_num: %d", r->changed.r_ilink.inode_num);
+		kprintf("\tlnk_cnt: %d", r->changed.r_ilink.linkcount);
+	}
+	else if(r->transaction_type == REC_DIR){
+		kprintf("\tDIR");
+		kprintf("\tprnt_inode: %d", r->changed.r_directory.parent_inode);
+		kprintf("\tslot: %d", r->changed.r_directory.slot);
+		kprintf("\tinode: %d", r->changed.r_directory.inode);
+		kprintf("\tname: %s", r->changed.r_directory.sfd_name);
+	}
+	else if(r->transaction_type == REC_BITMAP){
+		kprintf("\tBITMAP");
+		kprintf("\tidx: %d", r->changed.r_bitmap.index);
+		kprintf("\tsetting: %d", r->changed.r_bitmap.setting);
+	}
+	kprintf("\n");
 }

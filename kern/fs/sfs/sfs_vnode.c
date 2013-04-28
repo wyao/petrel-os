@@ -4086,20 +4086,26 @@ int check_and_record(struct record *r, struct transaction *t) {
 	return 0;
 }
 
-void journal_iterator(struct fs *fs) {
-	int i, j;
+void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
+	int i, j, entries;
 	struct record *r = kmalloc(SFS_BLOCKSIZE);
 	daddr_t block = JN_LOCATION(fs);
 
-	for(i=0; i<SFS_JN_SIZE-1; i++) {
-		if (i%3 == 0)
-			kprintf("\n");
+	// Get number of entries in journal
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL)
+		panic("Cannot allocate memory for journal summary");
+	if (sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE))
+		panic("Cannot from journal summary");
+	entries = s->num_entries;
+	kfree(s);
+
+	// Pass it to function
+	for(i=0; i<(entries + entries % REC_PER_BLK)/REC_PER_BLK; i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
-		kprintf("|Block %d: ", i);
 		for (j=0; j<REC_PER_BLK; j++) {
-			kprintf("%d ", r[j].transaction_id);
+			(*f)(&r[j]);
 		}
 	}
-	kprintf("\n");
 }

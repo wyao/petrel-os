@@ -56,6 +56,7 @@
  */
 struct lock *transaction_id_lock;
 struct lock *log_buf_lock;
+int journal_offset;
 
 struct transaction {
 	unsigned id;
@@ -144,7 +145,7 @@ struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount);
 struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, const char *sfd_name);
 struct record *makerec_bitmap(uint32_t index, uint32_t setting);
 
-void journal_iterator(struct fs *fs);
+void journal_iterator(struct fs *fs, void (*f)(struct record *));
 
 /*
  * Function for mounting a sfs (calls vfs_mount)
