@@ -50,6 +50,12 @@
  */
 #include <kern/sfs.h>
 
+#define BUF_RECORDS 128
+#define RECORD_SIZE 80 /* bytes */
+/* 4 records live in a 512-byte block
+ * 32 records live in page size journal buffer
+ * 512 records (16 filled buffers) live in 128 block journal
+ */
 
 /*
  * Tracks transaction
@@ -62,36 +68,6 @@ struct transaction {
 	unsigned id;
     struct array *bufs; /* buffer caches that the transaction has used */
 };
-
-struct record *log_buf;
-
-struct sfs_vnode {
-	struct vnode sv_v;              /* abstract vnode structure */
-	uint32_t sv_ino;                /* inode number */
-	unsigned sv_type;		/* cache of sfi_type */
-	struct buf *sv_buf;     /* buffer holding inode info */
-	uint32_t sv_bufdepth;   /* how many currently interested in sv_buf */
-	struct lock *sv_lock;		/* lock for vnode */
-};
-
-struct sfs_fs {
-	struct fs sfs_absfs;            /* abstract filesystem structure */
-	struct sfs_super sfs_super;	/* on-disk superblock */
-	bool sfs_superdirty;            /* true if superblock modified */
-	struct device *sfs_device;      /* device mounted on */
-	struct vnodearray *sfs_vnodes;  /* vnodes loaded into memory */
-	struct bitmap *sfs_freemap;     /* blocks in use are marked 1 */
-	bool sfs_freemapdirty;          /* true if freemap modified */
-	struct lock *sfs_vnlock;	/* lock for vnode table */
-	struct lock *sfs_bitlock;	/* lock for bitmap/superblock */
-	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
-};
-
-#define RECORD_SIZE 80 /* bytes */
-/* 4 records live in a 512-byte block
- * 32 records live in page size journal buffer
- * 512 records (16 filled buffers) live in 128 block journal
- */
 
 struct record {
 	uint32_t transaction_type;
@@ -127,6 +103,30 @@ struct record {
 			uint32_t setting;
 		} r_bitmap;
 	} changed;
+};
+
+struct record log_buf[BUF_RECORDS];
+
+struct sfs_vnode {
+	struct vnode sv_v;              /* abstract vnode structure */
+	uint32_t sv_ino;                /* inode number */
+	unsigned sv_type;		/* cache of sfi_type */
+	struct buf *sv_buf;     /* buffer holding inode info */
+	uint32_t sv_bufdepth;   /* how many currently interested in sv_buf */
+	struct lock *sv_lock;		/* lock for vnode */
+};
+
+struct sfs_fs {
+	struct fs sfs_absfs;            /* abstract filesystem structure */
+	struct sfs_super sfs_super;	/* on-disk superblock */
+	bool sfs_superdirty;            /* true if superblock modified */
+	struct device *sfs_device;      /* device mounted on */
+	struct vnodearray *sfs_vnodes;  /* vnodes loaded into memory */
+	struct bitmap *sfs_freemap;     /* blocks in use are marked 1 */
+	bool sfs_freemapdirty;          /* true if freemap modified */
+	struct lock *sfs_vnlock;	/* lock for vnode table */
+	struct lock *sfs_bitlock;	/* lock for bitmap/superblock */
+	struct lock *sfs_renamelock;	/* lock for sfs_rename() */
 };
 
 /* TODO declare:

@@ -3968,9 +3968,9 @@ int record(struct record *r) {
 	KASSERT(sizeof(struct record) == RECORD_SIZE);
 
 	lock_acquire(log_buf_lock);
-	if (log_buf_offset == PAGE_SIZE/RECORD_SIZE) {
+	if (log_buf_offset == BUF_RECORDS) {
 		// TODO: flush, could fail here?
-		log_buf_offset = 0;
+		panic("Log buffer filed");
 	}
 	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
 	log_buf_offset++;
@@ -4122,7 +4122,7 @@ void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
 	kfree(s);
 	kprintf("Num entries in journal: %d\n", entries);
 	// Pass it to function
-	for(i=0; i<(entries + entries % REC_PER_BLK)/REC_PER_BLK; i++) {
+	for(i=0; i<(ROUNDUP(entries, REC_PER_BLK)/REC_PER_BLK); i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
 		for (j=0; j<REC_PER_BLK; j++) {

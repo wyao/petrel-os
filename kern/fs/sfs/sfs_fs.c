@@ -52,6 +52,8 @@
 #define SFS_FS_BITBLOCKS(sfs)   SFS_BITBLOCKS((sfs)->sfs_super.sp_nblocks)
 #define JN_SUMMARY_LOCATION(sfs)    SFS_MAP_LOCATION + SFS_FS_BITBLOCKS(sfs) + 1
 
+struct bitmap *b;
+
 /* Journal prototype functions*/
 static
 void recover(struct sfs_fs *sfs);
@@ -269,7 +271,6 @@ sfs_unmount(struct fs *fs)
 	/* Destory journal objects */
 	lock_destroy(log_buf_lock);
 	lock_destroy(transaction_id_lock);
-	kfree(log_buf);
 
 	/* nothing else to do */
 	return 0;
@@ -319,19 +320,13 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	}
 
 	/* Allocate journal objects */
-	log_buf = kmalloc(PAGE_SIZE);
-	if (log_buf == NULL) {
-		return ENOMEM;
-	}
 	transaction_id_lock = lock_create("transaction id lock");
 	if (transaction_id_lock == NULL) {
-		kfree(log_buf);
 		return ENOMEM;
 	}
 	log_buf_lock = lock_create("log buffer lock");
 	if (log_buf_lock == NULL) {
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 
@@ -340,7 +335,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	if (sfs==NULL) {
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 
@@ -350,7 +344,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 
@@ -373,7 +366,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 
@@ -384,7 +376,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 
@@ -396,7 +387,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 
@@ -416,7 +406,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return result;
 	}
 
@@ -436,7 +425,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return EINVAL;
 	}
 
@@ -460,7 +448,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return ENOMEM;
 	}
 	result = sfs_mapio(sfs, UIO_READ);
@@ -475,7 +462,6 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		kfree(sfs);
 		lock_destroy(log_buf_lock);
 		lock_destroy(transaction_id_lock);
-		kfree(log_buf);
 		return result;
 	}
 
@@ -493,8 +479,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	lock_release(sfs->sfs_bitlock);
 
 	journal_iterator(*ret, print_transaction);
+	// (void)print_transaction;
 	return 0;
-
 }
 
 /*
@@ -510,10 +496,13 @@ sfs_mount(const char *device)
 /*
  * Journal recovery routine
  */
-// static
-// void first_pass(struct record *r, struct bitmap *b) {
-// 	(void)b;
-// }
+static
+void first_pass(struct record *r) {
+	unsigned id = r->transaction_id;
+	if (!bitmap_isset(b, id)) {
+		bitmap_mark(b, id);
+	}
+}
 
 static
 void recover(struct sfs_fs *sfs) {
@@ -522,12 +511,21 @@ void recover(struct sfs_fs *sfs) {
 	if (s == NULL)
 		panic("Cannot allocate memory for journal summary");
 	if (sfs_readblock(&sfs->sfs_absfs, JN_SUMMARY_LOCATION(sfs), s, SFS_BLOCKSIZE))
-		panic("Cannot from journal summary");
-	// struct bitmap *b = bitmap_create((unsigned)s->max_id);
-	kprintf("max id: %d\n", s->max_id);
-	// First pass
-	// journal_iterator(&sfs->sfs_absfs, first_pass(b));
+		panic("Cannot read from journal summary");
+	b = bitmap_create((unsigned)s->max_id+1);
+	if (b == NULL) {
+		panic("Cannot create bitmap");
+	}
 
+	// First pass
+	journal_iterator(&sfs->sfs_absfs, first_pass);
+	unsigned i;
+	for (i=0; i<s->max_id+1; i++) {
+		if (bitmap_isset(b, i))
+			kprintf("%d ", i);
+	}
+	kprintf("\n");
+	bitmap_destroy(b);
 	kfree(s);
 }
 
