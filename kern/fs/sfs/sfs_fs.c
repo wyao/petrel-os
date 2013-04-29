@@ -465,6 +465,22 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 		return result;
 	}
 
+	no_active_transactions = cv_create("no active transactions");
+	if (no_active_transactions == NULL)
+		goto err1;
+	checkpoint_cleared = cv_create("checkpoint cleared");
+	if (checkpoint_cleared == NULL)
+		goto err2;
+	transaction_lock = lock_create("transaction lock");
+	if (transaction_lock == NULL)
+		goto err3;
+	checkpoint_lock = lock_create("checkpoint lock");
+	if (checkpoint_lock == NULL)
+		goto err4;
+	num_active_transactions = 0;
+	in_checkpoint = 0;
+
+
 	/* the other fields */
 	sfs->sfs_superdirty = false;
 	sfs->sfs_freemapdirty = false;
@@ -481,6 +497,26 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	journal_iterator(*ret, print_transaction);
 	// (void)print_transaction;
 	return 0;
+
+	err4:
+	lock_destroy(transaction_lock);
+	err3:
+	cv_destroy(checkpoint_cleared);
+	err2:
+	cv_destroy(no_active_transactions);
+	err1:
+	lock_release(sfs->sfs_vnlock);
+	lock_release(sfs->sfs_bitlock);
+	lock_destroy(sfs->sfs_vnlock);
+	lock_destroy(sfs->sfs_bitlock);
+	lock_destroy(sfs->sfs_renamelock);
+	bitmap_destroy(sfs->sfs_freemap);
+	vnodearray_destroy(sfs->sfs_vnodes);
+	kfree(sfs);
+	lock_destroy(log_buf_lock);
+	lock_destroy(transaction_id_lock);
+	kfree(log_buf);
+	return ENOMEM;
 }
 
 /*

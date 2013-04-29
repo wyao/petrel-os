@@ -147,6 +147,17 @@ struct record *makerec_bitmap(uint32_t index, uint32_t setting);
 
 void journal_iterator(struct fs *fs, void (*f)(struct record *));
 
+
+////////////////////////////////////////////////////////////
+// Checkpoint synchronization
+
+struct cv *no_active_transactions;
+struct cv *checkpoint_cleared;
+struct lock *transaction_lock;
+struct lock *checkpoint_lock;
+int num_active_transactions;
+int in_checkpoint;
+
 /*
  * Function for mounting a sfs (calls vfs_mount)
  */

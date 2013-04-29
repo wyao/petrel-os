@@ -95,6 +95,7 @@ int log_buf_offset = 0;
 #define BITBLOCKS(fs) SFS_BITBLOCKS(((struct sfs_fs*)fs->fs_data)->sfs_super.sp_nblocks)
 #define JN_SUMMARY_LOCATION(fs) SFS_MAP_LOCATION + BITBLOCKS(fs) + 1
 #define JN_LOCATION(fs) SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1
+#define MAX_JN_ENTRIES (SFS_JN_SIZE-1)/REC_PER_BLK
 
 static
 struct transaction *
@@ -109,8 +110,15 @@ int record(struct record *r);
 static
 int commit(struct transaction *t, struct fs *fs);
 
+/*static
+void abort(struct transaction *t);*/
+
 static
 int check_and_record(struct record *r, struct transaction *t);
+
+static
+int checkpoint(void);
+
 
 ////////////////////////////////////////////////////////////
 //
@@ -1347,6 +1355,7 @@ sfs_reclaim(struct vnode *v)
 	bool buffers_needed;
 	int result;
 
+	//kprintf("SFS_RECLAIM\n");
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -1497,6 +1506,7 @@ sfs_write(struct vnode *v, struct uio *uio)
 
 	KASSERT(uio->uio_rw==UIO_WRITE);
 
+	//kprintf("SFS_WRITE\n");
 	// ENTRYPOINT: Create transaction
 	struct transaction *t = create_transaction();
 
@@ -2182,6 +2192,7 @@ sfs_truncate(struct vnode *v, off_t len)
 	struct sfs_vnode *sv = v->vn_data;
 	int result;
 
+	//kprintf("SFS_TRUNCATE\n");
 	//ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -2354,6 +2365,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	uint32_t ino;
 	int result;
 	struct record *r;
+	//kprintf("SFS_CREAT\n");
 
 	// ENTRYPOINT: Begin transaction
 	struct transaction *t = create_transaction();
@@ -2479,6 +2491,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	int result, result2;
 	struct record *r;
 
+	//kprintf("SFS_LINK\n");
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -2562,6 +2575,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct record *r;
 	int log_ret;
 
+	//kprintf("SFS_MKDIR\n");
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -2694,6 +2708,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 	int log_ret;
 	struct record *r;
 
+	//kprintf("SFS_RMDIR\n");
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -2801,8 +2816,8 @@ sfs_remove(struct vnode *dir, const char *name)
 	int slot;
 	int result;
 
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
+	kprintf("SFS_REMOVE\n");
+	// ENTRYPOINT: transaction is started after error checks pass
 
 	/* need to check this to avoid deadlock even in error condition */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -2848,6 +2863,9 @@ sfs_remove(struct vnode *dir, const char *name)
 		return EISDIR;
 	}
 
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+
 	/* Erase its directory entry. */
 	result = sfs_dir_unlink(sv, slot, t);
 	if (result==0) {
@@ -2855,6 +2873,12 @@ sfs_remove(struct vnode *dir, const char *name)
 		KASSERT(victim_inodeptr->sfi_linkcount > 0);
 		victim_inodeptr->sfi_linkcount--;
 		buffer_mark_dirty(victim->sv_buf);
+
+		struct record *r = makerec_ilink(victim->sv_ino,victim_inodeptr->sfi_linkcount);
+		int log_ret = check_and_record(r,t);
+		if (log_ret)
+			return log_ret;
+		hold_buffer_cache(t,victim->sv_buf);
 	}
 
 	sfs_release_inode(sv);
@@ -2868,7 +2892,6 @@ sfs_remove(struct vnode *dir, const char *name)
 	if (result) {
 		panic("panic for now");
 	}
-
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	lock_release(sv->sv_lock);
@@ -2971,6 +2994,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	int log_ret;
 	struct record *r;
 
+	//kprintf("SFS_RENAME\n");
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -3931,11 +3955,43 @@ create_transaction(void) {
 		return NULL;
 	}
 
+	// Synchronization for checkpointing
+	lock_acquire(checkpoint_lock);
+	while (in_checkpoint)
+		cv_wait(checkpoint_cleared,checkpoint_lock);
+	lock_release(checkpoint_lock);
+
+	lock_acquire(transaction_lock);	
+	num_active_transactions++;
+	lock_release(transaction_lock);
+	kprintf("transaction created (%d total)\n",num_active_transactions);
+
 	lock_acquire(transaction_id_lock);
 	t->id = next_transaction_id;
 	next_transaction_id++;
 	lock_release(transaction_id_lock);
 	return t;
+}
+
+static 
+int checkpoint(){
+	lock_acquire(transaction_lock);
+	while (num_active_transactions > 0)
+		cv_wait(no_active_transactions,transaction_lock);
+	lock_release(transaction_lock);
+
+	lock_acquire(checkpoint_lock);
+	in_checkpoint = 1;
+	lock_release(checkpoint_lock);
+	kprintf("In a checkpoint\n");
+
+	// Checkpoint stuff
+
+	lock_acquire(checkpoint_lock);
+	in_checkpoint = 0;
+	cv_broadcast(checkpoint_cleared,checkpoint_lock);
+	lock_release(checkpoint_lock);
+	return 0;
 }
 
 static
@@ -4080,6 +4136,23 @@ int commit(struct transaction *t, struct fs *fs) {
 
 	lock_release(log_buf_lock); // This also act as on disk journal log here
 
+	// Checkpoint signaling
+	lock_acquire(transaction_lock);
+	KASSERT(num_active_transactions > 0);
+	num_active_transactions--;
+	if (num_active_transactions == 0)
+		cv_signal(no_active_transactions,transaction_lock);
+	lock_release(transaction_lock);
+	kprintf("transaction completed (%d left)\n",num_active_transactions);
+
+	if (journal_offset + log_buf_offset > (int)(0.25 * MAX_JN_ENTRIES)){
+		lock_acquire(checkpoint_lock);  // TODO: not sure if we need to do this
+		if (!in_checkpoint){
+			lock_release(checkpoint_lock);
+			checkpoint();
+		}
+	}
+
 	// cleanup
 	result = 0;
 
@@ -4093,6 +4166,28 @@ int commit(struct transaction *t, struct fs *fs) {
 		kfree(tmp);
 		return result;
 }
+
+/* To be called in case of error so system doesnt think transaction exists
+static
+void abort(struct transaction *t){
+	int ix;
+
+	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
+		buf_decref((struct buf *)array_get(t->bufs, ix-1));
+		array_remove(t->bufs, ix-1);
+	}
+	array_destroy(t->bufs);
+	kfree(t);
+
+	// Synchro for checkpointing
+	lock_acquire(transaction_lock);
+	KASSERT(num_active_transactions > 0);
+	num_active_transactions--;
+	if (num_active_transactions == 0)
+		cv_signal(no_active_transactions,transaction_lock);
+	lock_release(transaction_lock);
+}
+*/
 
 static
 int check_and_record(struct record *r, struct transaction *t) {
