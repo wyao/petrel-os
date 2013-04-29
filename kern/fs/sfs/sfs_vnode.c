@@ -108,7 +108,7 @@ static
 int record(struct record *r);
 
 static
-int commit(struct transaction *t, struct fs *fs);
+int commit(struct transaction *t, struct fs *fs, int do_checkpoint);
 
 /*static
 void abort(struct transaction *t);*/
@@ -1447,7 +1447,8 @@ sfs_reclaim(struct vnode *v)
 	}
 	vnodearray_remove(sfs->sfs_vnodes, ix);
 
-	result = commit(t, v->vn_fs);
+	// TODO: To fix nested transaction bug, reclaim will NEVER checkpoint
+	result = commit(t, v->vn_fs, 0);
 	if (result) {
 		panic("panic for now");
 	}
@@ -1515,7 +1516,7 @@ sfs_write(struct vnode *v, struct uio *uio)
 
 	result = sfs_io(sv, uio, t);
 
-	result = commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs, 1);
 	if (result) { // TODO: abort?
 		panic("panic for now");
 	}
@@ -2201,7 +2202,7 @@ sfs_truncate(struct vnode *v, off_t len)
 
 	result = sfs_dotruncate(v, len, t);
 
-	result = commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs, 1);
 	if (result) {
 		panic("panic for now");
 	}
@@ -2458,7 +2459,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 
 	*ret = &newguy->sv_v;
 
-	result = commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs, 1);
 	if (result) {
 		panic("panic for now");
 	}
@@ -2537,7 +2538,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 
 	buffer_mark_dirty(f->sv_buf);
 
-	result = commit(t, dir->vn_fs);
+	result = commit(t, dir->vn_fs, 1);
 	if (result) {
 		panic("panic for now");
 	}
@@ -2663,7 +2664,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	lock_release(sv->sv_lock);
 	VOP_DECREF(&newguy->sv_v);
 
-	result = commit(t, v->vn_fs);
+	result = commit(t, v->vn_fs, 1);
 	if (result) {
 		panic("panic for now");
 	}
@@ -2888,7 +2889,7 @@ sfs_remove(struct vnode *dir, const char *name)
 	/* Discard the reference that sfs_lookonce got us */
 	VOP_DECREF(&victim->sv_v);
 
-	result = commit(t, dir->vn_fs);
+	result = commit(t, dir->vn_fs, 1);
 	if (result) {
 		panic("panic for now");
 	}
@@ -4039,7 +4040,7 @@ int record(struct record *r) {
  * Synch note: log_buf_lock doubles as mutex lock for on disk journal
  */
 static
-int commit(struct transaction *t, struct fs *fs) {
+int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	int i, j, result, part;
 	unsigned ix, max;
 	daddr_t block = JN_LOCATION(fs);
@@ -4146,11 +4147,8 @@ int commit(struct transaction *t, struct fs *fs) {
 	kprintf("transaction completed (%d left)\n",num_active_transactions);
 
 	if (journal_offset + log_buf_offset > (int)(0.25 * MAX_JN_ENTRIES)){
-		lock_acquire(checkpoint_lock);  // TODO: not sure if we need to do this
-		if (!in_checkpoint){
-			lock_release(checkpoint_lock);
+		if (do_checkpoint)
 			checkpoint();
-		}
 	}
 
 	// cleanup
