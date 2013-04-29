@@ -117,7 +117,7 @@ static
 int check_and_record(struct record *r, struct transaction *t);
 
 static
-int checkpoint(void);
+int checkpoint(struct fs *fs);
 
 
 ////////////////////////////////////////////////////////////
@@ -2817,7 +2817,7 @@ sfs_remove(struct vnode *dir, const char *name)
 	int slot;
 	int result;
 
-	kprintf("SFS_REMOVE\n");
+	// kprintf("SFS_REMOVE\n");
 	// ENTRYPOINT: transaction is started after error checks pass
 
 	/* need to check this to avoid deadlock even in error condition */
@@ -3965,7 +3965,7 @@ create_transaction(void) {
 	lock_acquire(transaction_lock);	
 	num_active_transactions++;
 	lock_release(transaction_lock);
-	kprintf("transaction created (%d total)\n",num_active_transactions);
+	// kprintf("transaction created (%d total)\n",num_active_transactions);
 
 	lock_acquire(transaction_id_lock);
 	t->id = next_transaction_id;
@@ -3975,7 +3975,9 @@ create_transaction(void) {
 }
 
 static 
-int checkpoint(){
+int checkpoint(struct fs *fs){
+	int result = 0;
+
 	lock_acquire(transaction_lock);
 	while (num_active_transactions > 0)
 		cv_wait(no_active_transactions,transaction_lock);
@@ -3984,15 +3986,29 @@ int checkpoint(){
 	lock_acquire(checkpoint_lock);
 	in_checkpoint = 1;
 	lock_release(checkpoint_lock);
-	kprintf("In a checkpoint\n");
+	// kprintf("In a checkpoint\n");
 
-	// Checkpoint stuff
+	// Checkpoint - write buffers to disk...
+	sync_fs_buffers(fs);
 
+	// ...then update journal summary block
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL) {
+		kfree(s);
+		result = ENOMEM;
+		goto finish;
+	}
+	sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
+	s->num_entries = 0;
+	sfs_writeblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
+	kfree(s);
+
+	finish:
 	lock_acquire(checkpoint_lock);
 	in_checkpoint = 0;
 	cv_broadcast(checkpoint_cleared,checkpoint_lock);
 	lock_release(checkpoint_lock);
-	return 0;
+	return result;
 }
 
 static
@@ -4144,11 +4160,11 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	if (num_active_transactions == 0)
 		cv_signal(no_active_transactions,transaction_lock);
 	lock_release(transaction_lock);
-	kprintf("transaction completed (%d left)\n",num_active_transactions);
+	// kprintf("transaction completed (%d left)\n",num_active_transactions);
 
 	if (journal_offset + log_buf_offset > (int)(0.25 * MAX_JN_ENTRIES)){
 		if (do_checkpoint)
-			checkpoint();
+			checkpoint(fs);
 	}
 
 	// cleanup
