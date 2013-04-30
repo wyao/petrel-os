@@ -20,6 +20,9 @@
 #include <copyinout.h>
 
 
+static 
+struct sfs_vnode *get_vnode(struct fs *fs, unsigned inode_num);
+
 /* Return a record struct populated except for transaction ID field */
 
 struct record *makerec_inode(uint32_t inode_num, uint16_t id_lvl, uint16_t set, uint32_t offset, uint32_t blockno){
@@ -87,4 +90,102 @@ struct record *makerec_bitmap(uint32_t index, uint32_t setting){
 		r->changed.r_bitmap = s;
 	}
 	return r;
+}
+
+// Apply a recorded change
+int apply_record(struct fs *fs, struct record *r){
+	struct sfs_inode *inodeptr;
+	struct sfs_vnode *vnodeptr;
+	struct sfs_fs *sfs;
+	struct buf *kbuf;
+	struct sfs_dir sd;
+	uint32_t *indir, *iddata;
+	int result;
+
+	switch(r->transaction_type){
+		case REC_INODE:
+		vnodeptr = get_vnode(fs,r->changed.r_inode.inode_num);
+		inodeptr = buffer_map(vnodeptr->sv_buf);
+		if (r->changed.r_inode.id_lvl == 0){
+			inodeptr->sfi_direct[r->changed.r_inode.offset] = r->changed.r_inode.blockno;
+			buffer_mark_dirty(vnodeptr->sv_buf);
+		}
+		else {
+			// Find level of indirection
+			if (r->changed.r_inode.id_lvl == 1)
+				indir = &inodeptr->sfi_indirect;
+			if (r->changed.r_inode.id_lvl == 2)
+				indir = &inodeptr->sfi_dindirect;
+			if (r->changed.r_inode.id_lvl == 3)
+				indir = &inodeptr->sfi_tindirect;
+
+			// Allocated an indirect block
+			if (r->changed.r_inode.set){
+				*indir = r->changed.r_inode.blockno;
+				buffer_mark_dirty(vnodeptr->sv_buf);
+			}
+			// Changed contents of indirect block
+			else {
+				result = buffer_get(fs, *indir, SFS_BLOCKSIZE, &kbuf);
+				KASSERT(result == 0);
+				iddata = buffer_map(kbuf);
+				iddata[r->changed.r_inode.offset] = r->changed.r_inode.blockno;
+				buffer_mark_dirty(kbuf);
+			}
+		}
+		break;
+		case REC_ILINK:
+		vnodeptr = get_vnode(fs,r->changed.r_ilink.inode_num);
+		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr->sfi_linkcount = r->changed.r_ilink.linkcount;
+		buffer_mark_dirty(vnodeptr->sv_buf);
+		break;
+		case REC_ISIZE:
+		vnodeptr = get_vnode(fs,r->changed.r_isize.inode_num);
+		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr->sfi_size = r->changed.r_isize.size;
+		buffer_mark_dirty(vnodeptr->sv_buf);
+		break;
+		case REC_ITYPE:
+		vnodeptr = get_vnode(fs,r->changed.r_itype.inode_num);
+		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr->sfi_type = r->changed.r_itype.type;
+		buffer_mark_dirty(vnodeptr->sv_buf);
+		break;
+		case REC_BITMAP:
+		sfs = fs->fs_data;
+		if (r->changed.r_bitmap.setting)
+			bitmap_mark(sfs->sfs_freemap,r->changed.r_bitmap.index);
+		else
+			bitmap_unmark(sfs->sfs_freemap,r->changed.r_bitmap.index);
+		sfs->sfs_freemapdirty = 1;
+		break;
+		case REC_DIR:
+		sd.sfd_ino = r->changed.r_directory.inode;
+		strcpy(sd.sfd_name, r->changed.r_directory.sfd_name);
+		break;
+		default:
+		return EINVAL;
+	}
+	return 0;
+}
+
+static 
+struct sfs_vnode *get_vnode(struct fs *fs, unsigned inode_num){
+	struct sfs_fs *sfs = fs->fs_data;
+	struct sfs_vnode *vnodeptr;
+	int result;
+
+	int i, nvns;
+	nvns = vnodearray_num(sfs->sfs_vnodes);
+	for (i=0; i<nvns; i++){
+		vnodeptr = vnodearray_get(sfs->sfs_vnodes,i)->vn_data;
+		if (vnodeptr->sv_ino == inode_num){
+			result = sfs_load_inode(vnodeptr);
+			KASSERT(result != 0);
+			return vnodeptr;
+		}
+	}
+	KASSERT(0); // Should never fail
+	return NULL;
 }
