@@ -99,7 +99,10 @@ int apply_record(struct fs *fs, struct record *r){
 	struct sfs_fs *sfs;
 	struct buf *kbuf;
 	struct sfs_dir sd;
+	struct iovec iov;
+	struct uio ku;
 	uint32_t *indir, *iddata;
+	off_t actual_pos;
 	int result;
 
 	switch(r->transaction_type){
@@ -161,8 +164,20 @@ int apply_record(struct fs *fs, struct record *r){
 		sfs->sfs_freemapdirty = 1;
 		break;
 		case REC_DIR:
+		// Set up directory entry
 		sd.sfd_ino = r->changed.r_directory.inode;
 		strcpy(sd.sfd_name, r->changed.r_directory.sfd_name);
+		// Get parent inode
+		vnodeptr = get_vnode(fs,r->changed.r_directory.parent_inode);
+		actual_pos = sizeof(struct sfs_dir)*r->changed.r_directory.slot;
+		uio_kinit(&iov, &ku, &sd, sizeof(struct sfs_dir), actual_pos, UIO_WRITE);
+
+		result = lock_do_i_hold(vnodeptr->sv_lock);
+		if (!result) // Not sure if we need to hold lock in recovery, but theres an assert at beginning of io calls
+			lock_acquire(vnodeptr->sv_lock);
+		KASSERT(sfs_io2(vnodeptr,&ku) == 0);
+		if (!result)
+			lock_release(vnodeptr->sv_lock);
 		break;
 		default:
 		return EINVAL;
@@ -182,7 +197,7 @@ struct sfs_vnode *get_vnode(struct fs *fs, unsigned inode_num){
 		vnodeptr = vnodearray_get(sfs->sfs_vnodes,i)->vn_data;
 		if (vnodeptr->sv_ino == inode_num){
 			result = sfs_load_inode(vnodeptr);
-			KASSERT(result != 0);
+			KASSERT(result != 0); // inode should be able to load
 			return vnodeptr;
 		}
 	}
