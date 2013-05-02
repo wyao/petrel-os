@@ -4481,8 +4481,13 @@ int checkpoint(struct fs *fs){
 	}
 	sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
 	s->num_entries = 0;
+	s->max_id = 0;
 	sfs_writeblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
 	kfree(s);
+
+	// Reset counters
+	journal_offset = 0;
+	next_transaction_id = 0;
 
 	finish:
 	lock_acquire(checkpoint_lock);
