@@ -494,8 +494,8 @@ sfs_domount(void *options, struct device *dev, struct fs **ret)
 	lock_release(sfs->sfs_vnlock);
 	lock_release(sfs->sfs_bitlock);
 
-	journal_iterator(*ret, print_transaction);
-	// (void)print_transaction;
+	// journal_iterator(*ret, print_transaction);
+	(void)print_transaction;
 	return 0;
 
 	err4:
@@ -555,12 +555,15 @@ void recover(struct sfs_fs *sfs) {
 
 	// First pass
 	journal_iterator(&sfs->sfs_absfs, first_pass);
-	unsigned i;
-	for (i=0; i<s->max_id+1; i++) {
-		if (bitmap_isset(b, i))
-			kprintf("%d ", i);
-	}
-	kprintf("\n");
+	// unsigned i;
+	// for (i=0; i<s->max_id+1; i++) {
+	// 	if (bitmap_isset(b, i))
+	// 		kprintf("%d ", i);
+	// }
+	// kprintf("\n");
+
+	// Second pass
+
 	bitmap_destroy(b);
 	kfree(s);
 }

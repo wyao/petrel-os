@@ -4538,7 +4538,7 @@ int record(struct record *r) {
  */
 static
 int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
-	int i, j, result, part;
+	int i, result, part;
 	unsigned ix, max;
 	daddr_t block = JN_LOCATION(fs);
 	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
@@ -4575,15 +4575,9 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 				journal_offset += log_buf_offset;
 
 			}
-			// Record max
-			for (j=0; j<i; j++) {
-				if (log_buf[j].transaction_id > max) {
-					max = log_buf[j].transaction_id;
-				}
-			}
 		}
 		// Write full blocks
-		while (i<log_buf_offset-(log_buf_offset % REC_PER_BLK)) {
+		while (log_buf_offset-i >= REC_PER_BLK) {
 			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
 				&log_buf[i], SFS_BLOCKSIZE);
 			if (result) {
@@ -4592,13 +4586,8 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 			}
 			i += REC_PER_BLK;
 			journal_offset += REC_PER_BLK;
-			// Record max
-			for (j=0; j<REC_PER_BLK; j++) {
-				if (log_buf[j].transaction_id > max) {
-					max = log_buf[j].transaction_id;
-				}
-			}
 		}
+		KASSERT(i<=log_buf_offset);
 		// Partial write TODO: make sure not at end of log_buf
 		if (log_buf_offset != i) {
 			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
@@ -4608,11 +4597,13 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 				goto err;
 			}
 			journal_offset += log_buf_offset - i;
-			// Record max
-			for (j=0; j< log_buf_offset - i; j++) {
-				if (log_buf[j].transaction_id > max) {
-					max = log_buf[j].transaction_id;
-				}
+			i += log_buf_offset - i;
+		}
+		KASSERT(i == log_buf_offset);
+		// Record max
+		for (i=0; i< log_buf_offset; i++) {
+			if (log_buf[i].transaction_id > max) {
+				max = log_buf[i].transaction_id;
 			}
 		}
 		// Clear log buf
