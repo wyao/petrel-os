@@ -146,7 +146,8 @@ struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode,
 struct record *makerec_bitmap(uint32_t index, uint32_t setting);
 
 void journal_iterator(struct fs *fs, void (*f)(struct record *));
-int apply_record(struct fs *fs, struct record *r);
+void fs_journal_iterator(struct fs *fs, struct bitmap *b, void (*f)(struct fs *,struct record *));
+void apply_record(struct fs *fs, struct record *r);
 int sfs_io2(struct sfs_vnode *sv, struct uio *uio);
 
 

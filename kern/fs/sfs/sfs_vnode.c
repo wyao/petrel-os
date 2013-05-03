@@ -4740,3 +4740,27 @@ void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
 	}
 }
 
+void fs_journal_iterator(struct fs *fs, struct bitmap *b, void (*f)(struct fs *,struct record *)) {
+	int i, j, entries;
+	struct record *r = kmalloc(SFS_BLOCKSIZE);
+	daddr_t block = JN_LOCATION(fs);
+
+	// Get number of entries in journal
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL)
+		panic("Cannot allocate memory for journal summary");
+	if (sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE))
+		panic("Cannot from journal summary");
+	entries = s->num_entries;
+	kfree(s);
+	kprintf("Num entries in journal: %d\n", entries);
+	// Pass it to function
+	for(i=0; i<(ROUNDUP(entries, REC_PER_BLK)/REC_PER_BLK); i++) {
+		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
+			panic("Just panic");
+		for (j=0; j<REC_PER_BLK; j++) {
+			if (bitmap_isset(b,j))
+				(*f)(fs,&r[j]);
+		}
+	}
+}

@@ -93,7 +93,7 @@ struct record *makerec_bitmap(uint32_t index, uint32_t setting){
 }
 
 // Apply a recorded change
-int apply_record(struct fs *fs, struct record *r){
+void apply_record(struct fs *fs, struct record *r){
 	struct sfs_inode *inodeptr;
 	struct sfs_vnode *vnodeptr;
 	struct sfs_fs *sfs;
@@ -180,9 +180,8 @@ int apply_record(struct fs *fs, struct record *r){
 			lock_release(vnodeptr->sv_lock);
 		break;
 		default:
-		return EINVAL;
+		panic("Invalid record");
 	}
-	return 0;
 }
 
 static 
