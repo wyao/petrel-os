@@ -4648,8 +4648,11 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	// kprintf("transaction completed (%d left)\n",num_active_transactions);
 
 	if (journal_offset + log_buf_offset > (int)(0.7 * MAX_JN_ENTRIES)){
-		if (do_checkpoint)
+		if (do_checkpoint) {
 			checkpoint(fs);
+		}
+		else
+			lock_release(checkpoint_lock);
 	}
 
 	// cleanup
@@ -4724,3 +4727,4 @@ void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
 		}
 	}
 }
+
