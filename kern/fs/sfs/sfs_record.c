@@ -19,9 +19,12 @@
 #include <current.h>
 #include <copyinout.h>
 
-
 static 
-struct sfs_vnode *get_vnode(struct fs *fs, unsigned inode_num);
+struct sfs_inode *get_inode(struct fs *fs, unsigned inode_num);
+
+static
+int
+sfs_bmap_r(struct fs *fs, struct sfs_inode *inodeptr, uint32_t fileblock, uint32_t *diskblock);
 
 /* Return a record struct populated except for transaction ID field */
 
@@ -95,23 +98,21 @@ struct record *makerec_bitmap(uint32_t index, uint32_t setting){
 // Apply a recorded change
 void apply_record(struct fs *fs, struct record *r){
 	struct sfs_inode *inodeptr;
-	struct sfs_vnode *vnodeptr;
 	struct sfs_fs *sfs;
-	struct buf *kbuf;
 	struct sfs_dir sd;
-	struct iovec iov;
-	struct uio ku;
-	uint32_t *indir, *iddata;
+	uint32_t *indir, *iddata, *dirblock;
+	uint32_t fileblock, fileoff;
 	off_t actual_pos;
-	int result;
+	char *data;
+
+	inodeptr = kmalloc(sizeof(struct sfs_inode));
+	data = kmalloc(SFS_BLOCKSIZE);
 
 	switch(r->transaction_type){
 		case REC_INODE:
-		vnodeptr = get_vnode(fs,r->changed.r_inode.inode_num);
-		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr = get_inode(fs,r->changed.r_inode.inode_num);
 		if (r->changed.r_inode.id_lvl == 0){
 			inodeptr->sfi_direct[r->changed.r_inode.offset] = r->changed.r_inode.blockno;
-			buffer_mark_dirty(vnodeptr->sv_buf);
 		}
 		else {
 			// Find level of indirection
@@ -125,36 +126,35 @@ void apply_record(struct fs *fs, struct record *r){
 			// Allocated an indirect block
 			if (r->changed.r_inode.set){
 				*indir = r->changed.r_inode.blockno;
-				buffer_mark_dirty(vnodeptr->sv_buf);
+				sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
 			}
 			// Changed contents of indirect block
 			else {
-				result = buffer_get(fs, *indir, SFS_BLOCKSIZE, &kbuf);
-				KASSERT(result == 0);
-				iddata = buffer_map(kbuf);
+				sfs_readblock(fs,*indir,iddata,SFS_BLOCKSIZE);
 				iddata[r->changed.r_inode.offset] = r->changed.r_inode.blockno;
-				buffer_mark_dirty(kbuf);
+				sfs_writeblock(fs,*indir,iddata,SFS_BLOCKSIZE);
 			}
 		}
 		break;
+
 		case REC_ILINK:
-		vnodeptr = get_vnode(fs,r->changed.r_ilink.inode_num);
-		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr = get_inode(fs,r->changed.r_ilink.inode_num);
 		inodeptr->sfi_linkcount = r->changed.r_ilink.linkcount;
-		buffer_mark_dirty(vnodeptr->sv_buf);
+		sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
 		break;
+
 		case REC_ISIZE:
-		vnodeptr = get_vnode(fs,r->changed.r_isize.inode_num);
-		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr = get_inode(fs,r->changed.r_isize.inode_num);
 		inodeptr->sfi_size = r->changed.r_isize.size;
-		buffer_mark_dirty(vnodeptr->sv_buf);
+		sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
 		break;
+
 		case REC_ITYPE:
-		vnodeptr = get_vnode(fs,r->changed.r_itype.inode_num);
-		inodeptr = buffer_map(vnodeptr->sv_buf);
+		inodeptr = get_inode(fs,r->changed.r_itype.inode_num);
 		inodeptr->sfi_type = r->changed.r_itype.type;
-		buffer_mark_dirty(vnodeptr->sv_buf);
+		sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
 		break;
+
 		case REC_BITMAP:
 		sfs = fs->fs_data;
 		if (r->changed.r_bitmap.setting)
@@ -162,44 +162,138 @@ void apply_record(struct fs *fs, struct record *r){
 		else
 			bitmap_unmark(sfs->sfs_freemap,r->changed.r_bitmap.index);
 		sfs->sfs_freemapdirty = 1;
+		// TODO: sync buffer explicitly
 		break;
-		case REC_DIR:
-		// Set up directory entry
-		sd.sfd_ino = r->changed.r_directory.inode;
-		strcpy(sd.sfd_name, r->changed.r_directory.sfd_name);
-		// Get parent inode
-		vnodeptr = get_vnode(fs,r->changed.r_directory.parent_inode);
-		actual_pos = sizeof(struct sfs_dir)*r->changed.r_directory.slot;
-		uio_kinit(&iov, &ku, &sd, sizeof(struct sfs_dir), actual_pos, UIO_WRITE);
 
-		result = lock_do_i_hold(vnodeptr->sv_lock);
-		if (!result) // Not sure if we need to hold lock in recovery, but theres an assert at beginning of io calls
-			lock_acquire(vnodeptr->sv_lock);
-		KASSERT(sfs_io2(vnodeptr,&ku) == 0);
-		if (!result)
-			lock_release(vnodeptr->sv_lock);
+		case REC_DIR:
+		sd.sfd_ino = r->changed.r_directory.inode;
+		// KASSERT(strcpy(sd.sfd_name,r->changed.r_directory.sfd_name)==0);
+
+		inodeptr = get_inode(fs,r->changed.r_directory.parent_inode);
+		actual_pos = sizeof(struct sfs_dir)*r->changed.r_directory.slot;
+		fileblock = actual_pos/SFS_BLOCKSIZE;
+		fileoff = actual_pos % SFS_BLOCKSIZE;
+
+		sfs_bmap_r(fs,inodeptr,fileblock,dirblock);
+		sfs_readblock(fs,*dirblock,data,SFS_BLOCKSIZE);
+		memcpy(&data[fileoff],&sd,sizeof(struct sfs_dir));
+		sfs_writeblock(fs,*dirblock,data,SFS_BLOCKSIZE);		
+		
 		break;
 		default:
 		panic("Invalid record");
 	}
+
+	kfree(inodeptr);
+	kfree(data);
 }
 
 static 
-struct sfs_vnode *get_vnode(struct fs *fs, unsigned inode_num){
-	struct sfs_fs *sfs = fs->fs_data;
-	struct sfs_vnode *vnodeptr;
-	int result;
-
-	int i, nvns;
-	nvns = vnodearray_num(sfs->sfs_vnodes);
-	for (i=0; i<nvns; i++){
-		vnodeptr = vnodearray_get(sfs->sfs_vnodes,i)->vn_data;
-		if (vnodeptr->sv_ino == inode_num){
-			result = sfs_load_inode(vnodeptr);
-			KASSERT(result != 0); // inode should be able to load
-			return vnodeptr;
-		}
-	}
-	KASSERT(0); // Should never fail
-	return NULL;
+struct sfs_inode *get_inode(struct fs *fs, unsigned inode_num) {
+	struct sfs_inode *inodeptr;
+	if (sfs_readblock(fs,inode_num,inodeptr,SFS_BLOCKSIZE))
+		panic("Couldnt get inode");
+	return inodeptr;
 }
+
+static
+int
+sfs_bmap_r(struct fs *fs, struct sfs_inode *inodeptr, uint32_t fileblock, uint32_t *diskblock)
+{
+	uint32_t *iddata;
+	uint32_t block, cur_block, next_block;
+	uint32_t idoff;
+	int indir, i;
+
+	KASSERT(SFS_DBPERIDB * sizeof(*iddata) == SFS_BLOCKSIZE);
+
+	/*
+	 * Check that we are not being asked for a block beyond 
+	 * the maximum allowed file size
+	 */
+	if(fileblock >= SFS_NDIRECT + SFS_DBPERIDB + SFS_DBPERIDB*SFS_DBPERIDB +
+			SFS_DBPERIDB*SFS_DBPERIDB*SFS_DBPERIDB)
+	{
+		return EINVAL;
+	}
+
+	/*
+	 * If the block we want is one of the direct blocks...
+	 */
+	if (fileblock < SFS_NDIRECT) {
+		/*
+		 * Get the block number
+		 */
+		block = inodeptr->sfi_direct[fileblock];
+		*diskblock = block;
+		return 0;
+	}
+
+	/* It's not a direct block. Figure out what level of indirection we are in. */
+
+	fileblock -= SFS_NDIRECT;
+
+	if(fileblock >= SFS_DBPERIDB + SFS_DBPERIDB*SFS_DBPERIDB)
+	{
+		/* It's reachable through the triple indirect block */
+		indir = 3;
+		fileblock -= SFS_DBPERIDB + SFS_DBPERIDB*SFS_DBPERIDB;
+
+		/* Set the next_block to triple indirect */
+		next_block = inodeptr->sfi_tindirect;
+	}
+	else if(fileblock >= SFS_DBPERIDB)
+	{
+		/* It's reachable through the double indirect block */
+		indir = 2;
+		fileblock -= SFS_DBPERIDB;
+
+		/* Set the next block to double indirect */
+		next_block = inodeptr->sfi_dindirect;
+	}
+	else
+	{
+		indir = 1;
+		next_block = inodeptr->sfi_indirect;
+	}
+
+	KASSERT(next_block != 0);
+
+
+	/* Now loop through the levels of indirection until we get to the
+	 * direct block we need.
+	 */
+	for(i = indir; i>0; i--)
+	{
+		KASSERT(sfs_readblock(fs,next_block,iddata,SFS_BLOCKSIZE)==0);
+
+		/* Now adjust the file block so that it would look as if
+		 * we only have one branch of indirections (i.e. only a triple indirect block).
+		 * Calculate idoff - this is the offset into the current block, which gives the
+		 * number of the next block we have to read.
+		 */
+		if(i == 3)
+		{
+			idoff = fileblock/(SFS_DBPERIDB*SFS_DBPERIDB);
+			fileblock -= idoff * (SFS_DBPERIDB*SFS_DBPERIDB);
+		}
+		if(i == 2)
+		{
+			idoff = fileblock/SFS_DBPERIDB;
+			fileblock -= idoff * SFS_DBPERIDB;
+		}
+		if(i == 1)
+		{
+			idoff = fileblock;
+		}
+
+		cur_block = next_block;
+		next_block = iddata[idoff];
+	}
+
+		
+	*diskblock = next_block;
+	return 0;
+}
+
+
