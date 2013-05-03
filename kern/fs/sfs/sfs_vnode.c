@@ -4660,7 +4660,7 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	lock_release(checkpoint_lock);
 	// kprintf("transaction completed (%d left)\n",num_active_transactions);
 
-	if (journal_offset + log_buf_offset > (int)(0.25 * MAX_JN_ENTRIES)){
+	if (journal_offset + log_buf_offset > (int)(0.1 * MAX_JN_ENTRIES)){
 		if (do_checkpoint && num_active_transactions == 0) {
 			checkpoint(fs);
 		}
