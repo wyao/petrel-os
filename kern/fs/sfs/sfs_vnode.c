@@ -95,7 +95,7 @@ int log_buf_offset = 0;
 #define BITBLOCKS(fs) SFS_BITBLOCKS(((struct sfs_fs*)fs->fs_data)->sfs_super.sp_nblocks)
 #define JN_SUMMARY_LOCATION(fs) SFS_MAP_LOCATION + BITBLOCKS(fs) + 1
 #define JN_LOCATION(fs) SFS_MAP_LOCATION + BITBLOCKS(fs) + 1 + 1
-#define MAX_JN_ENTRIES (SFS_JN_SIZE-1)/REC_PER_BLK
+#define MAX_JN_ENTRIES (SFS_JN_SIZE-1) * REC_PER_BLK
 
 static
 struct transaction *
@@ -3193,6 +3193,8 @@ sfs_rmdir(struct vnode *v, const char *name)
 	//kprintf("SFS_RMDIR\n");
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
+	// if (strcmp(name, "bbbb\n") && t->id > 500)
+	// 	kprintf("rmdir id: %d %s \n",t->id, name);
 
 	/* Cannot remove the . or .. entries from a directory! */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
@@ -4459,14 +4461,20 @@ static
 int checkpoint(struct fs *fs){
 	int result = 0;
 
+	lock_acquire(checkpoint_lock);
+	if (in_checkpoint == 0)
+		in_checkpoint = 1;
+	else {
+		lock_release(checkpoint_lock);
+		return 0;
+	}
+	lock_release(checkpoint_lock);
+
 	lock_acquire(transaction_lock);
 	while (num_active_transactions > 0)
 		cv_wait(no_active_transactions,transaction_lock);
 	lock_release(transaction_lock);
 
-	lock_acquire(checkpoint_lock);
-	in_checkpoint = 1;
-	lock_release(checkpoint_lock);
 	// kprintf("In a checkpoint\n");
 
 	// Checkpoint - write buffers to disk...
@@ -4635,11 +4643,11 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	KASSERT(num_active_transactions > 0);
 	num_active_transactions--;
 	if (num_active_transactions == 0)
-		cv_signal(no_active_transactions,transaction_lock);
+		cv_broadcast(no_active_transactions,transaction_lock);
 	lock_release(transaction_lock);
 	// kprintf("transaction completed (%d left)\n",num_active_transactions);
 
-	if (journal_offset + log_buf_offset > (int)(0.25 * MAX_JN_ENTRIES)){
+	if (journal_offset + log_buf_offset > (int)(0.7 * MAX_JN_ENTRIES)){
 		if (do_checkpoint)
 			checkpoint(fs);
 	}
