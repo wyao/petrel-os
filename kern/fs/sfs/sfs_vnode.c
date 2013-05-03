@@ -3051,10 +3051,6 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct record *r;
 	int log_ret;
 
-	//kprintf("SFS_MKDIR\n");
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
-
 	(void)mode;
 
 	lock_acquire(sv->sv_lock);
@@ -3065,27 +3061,35 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 		goto die_early;
 	}
 	dir_inodeptr = buffer_map(sv->sv_buf);
+
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+
 	hold_buffer_cache(t,sv->sv_buf);
 	
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
+		abort(t);
 		goto die_simple;
 	}
 
 	/* Look up the name */
 	result = sfs_dir_findname(sv, name, &ino, NULL, NULL);
 	if (result!=0 && result!=ENOENT) {
+		abort(t);
 		goto die_simple;
 	}
 
 	/* If it exists, fail */
 	if (result==0) {
 		result = EEXIST;
+		abort(t);
 		goto die_simple;
 	}
 
 	result = sfs_makeobj(sfs, SFS_TYPE_DIR, &newguy, t);
 	if (result) {
+		abort(t);
 		goto die_simple;
 	}
 	new_inodeptr = buffer_map(newguy->sv_buf);
@@ -3093,16 +3097,19 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 
 	result = sfs_dir_link(newguy, ".", newguy->sv_ino, NULL, t);
 	if (result) {
+		abort(t);
 		goto die_uncreate;
 	}
 
 	result = sfs_dir_link(newguy, "..", sv->sv_ino, NULL, t);
 	if (result) {
+		abort(t);
 		goto die_uncreate;
 	}
 
 	result = sfs_dir_link(sv, name, newguy->sv_ino, NULL, t);
 	if (result) {
+		abort(t);
 		goto die_uncreate;
 	}
 
@@ -3139,11 +3146,10 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	lock_release(sv->sv_lock);
 	VOP_DECREF(&newguy->sv_v);
 
-	commit(t, v->vn_fs, 1);
-
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	KASSERT(result==0);
+	commit(t, v->vn_fs, 1);
 	return result;
 
 die_uncreate:
@@ -3157,7 +3163,6 @@ die_simple:
 die_early:
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
-	abort(t);
 	return result;
 }
 
@@ -4532,7 +4537,7 @@ int hold_buffer_cache(struct transaction *t, struct buf *buf) {
 		// Add buf to transaction
 		result = array_add(t->bufs, buf, NULL);
 		if (result) {
-			return result;
+			panic("Couldn't hold buffer");
 		}
 		// Increase reference count
 		buf_incref(buf);
