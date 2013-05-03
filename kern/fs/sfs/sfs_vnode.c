@@ -110,8 +110,8 @@ int record(struct record *r);
 static
 int commit(struct transaction *t, struct fs *fs, int do_checkpoint);
 
-/*static
-void abort(struct transaction *t);*/
+static
+void abort(struct transaction *t);
 
 static
 int check_and_record(struct record *r, struct transaction *t);
@@ -214,7 +214,7 @@ sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock, struct buf **bufret, struct 
 
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		return result;
 	}
@@ -366,7 +366,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 			r = makerec_inode(sv->sv_ino,0,0,fileblock,block);
 			int log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(sv->sv_buf);
 		}
@@ -444,7 +444,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 		}
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		buffer_mark_dirty(sv->sv_buf);
 	} else {
@@ -513,7 +513,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 			r = makerec_inode(sv->sv_ino,i,0,idoff,next_block);
 			int log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(kbuf);
 			buffer_release(kbuf);
@@ -1162,7 +1162,7 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio, struct transaction *t)
 		struct record *r = makerec_isize(sv->sv_ino,uio->uio_offset);
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		buffer_mark_dirty(sv->sv_buf);
 	}
@@ -1568,7 +1568,7 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot, st
 	r = makerec_dir(sv->sv_ino,emptyslot,ino,name);
 	int log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	/* Hand back the slot, if so requested. */
 	if (slot) {
@@ -1604,7 +1604,7 @@ sfs_dir_unlink(struct sfs_vnode *sv, int slot, struct transaction *t)
 	r = makerec_dir(sv->sv_ino,slot,0,NULL);
 	int log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	/* ... and write it */
 	return sfs_writedir(sv, &sd, slot, t);
@@ -1836,10 +1836,6 @@ sfs_reclaim(struct vnode *v)
 	bool buffers_needed;
 	int result;
 
-	//kprintf("SFS_RECLAIM\n");
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
-
 	lock_acquire(sv->sv_lock);
 	lock_acquire(sfs->sfs_vnlock);
 
@@ -1887,6 +1883,9 @@ sfs_reclaim(struct vnode *v)
 	}
 	iptr = buffer_map(sv->sv_buf);
 
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+
 	/* If there are no on-disk references to the file either, erase it. */
 	if (iptr->sfi_linkcount==0) {
 		result = sfs_dotruncate(&sv->sv_v, 0, t);
@@ -1897,6 +1896,7 @@ sfs_reclaim(struct vnode *v)
 			if (buffers_needed) {
 				unreserve_buffers(4, SFS_BLOCKSIZE);
 			}
+			abort(t);
 			return result;
 		}
 		sfs_release_inode(sv);
@@ -1997,10 +1997,7 @@ sfs_write(struct vnode *v, struct uio *uio)
 
 	result = sfs_io(sv, uio, t);
 
-	result = commit(t, v->vn_fs, 1);
-	if (result) { // TODO: abort?
-		panic("panic for now");
-	}
+	commit(t, v->vn_fs, 1);
 
 	unreserve_buffers(3, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
@@ -2279,7 +2276,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 			r = makerec_inode(sv->sv_ino,0,0,i,0);
 			int log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 		}
 	}
 
@@ -2542,7 +2539,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 							r = makerec_inode(sv->sv_ino,1,1,0,0);
 							int log_ret = check_and_record(r,t);
 							if (log_ret)
-								return log_ret;
+								panic("log failed");
 						}
 						if(indir != 1)
 						{
@@ -2590,7 +2587,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 						r = makerec_inode(sv->sv_ino,2,1,0,0);
 						int log_ret = check_and_record(r,t);
 						if (log_ret)
-							return log_ret;
+							panic("log failed");
 
 						buffer_mark_dirty(sv->sv_buf);
 					}
@@ -2630,7 +2627,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 				r = makerec_inode(sv->sv_ino,3,1,0,0);
 				int log_ret = check_and_record(r,t);
 				if (log_ret)
-					return log_ret;
+					panic("log failed");
 			}
 			else if(tid_modified)
 			{
@@ -2649,7 +2646,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 	r = makerec_isize(sv->sv_ino,len);
 	int log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	/* Mark the inode dirty */
 	buffer_mark_dirty(sv->sv_buf);
@@ -2849,9 +2846,6 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	struct record *r;
 	//kprintf("SFS_CREAT\n");
 
-	// ENTRYPOINT: Begin transaction
-	struct transaction *t = create_transaction();
-
 	lock_acquire(sv->sv_lock);
 	
 	reserve_buffers(4, SFS_BLOCKSIZE);
@@ -2888,17 +2882,28 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 		return EEXIST;
 	}
 
+	// ENTRYPOINT: Begin transaction
+	struct transaction *t = create_transaction();
+
 	if (result==0) {
 		/* We got a file; load its vnode and return */
 		result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, &newguy,false, t);
 		if (result) {
 			unreserve_buffers(4, SFS_BLOCKSIZE);
 			lock_release(sv->sv_lock);
+			// Abort
+			abort(t);
 			return result;
 		}
 		*ret = &newguy->sv_v;
 		unreserve_buffers(4, SFS_BLOCKSIZE);
 		lock_release(sv->sv_lock);
+
+		// Commit
+		result = commit(t, v->vn_fs, 1);
+		if (result) {
+			panic("panic for now");
+		}
 		return 0;
 	}
 
@@ -2907,6 +2912,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	if (result) {
 		unreserve_buffers(4, SFS_BLOCKSIZE);
 		lock_release(sv->sv_lock);
+		abort(t);
 		return result;
 	}
 	new_inodeptr = buffer_map(newguy->sv_buf);
@@ -2923,6 +2929,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 		VOP_DECREF(&newguy->sv_v);
 		unreserve_buffers(4, SFS_BLOCKSIZE);
 		lock_release(sv->sv_lock);
+		abort(t);
 		return result;
 	}
 
@@ -2931,8 +2938,9 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 
 	r = makerec_ilink(sv->sv_ino,new_inodeptr->sfi_linkcount);
 	int log_ret = check_and_record(r,t);
-	if (log_ret)
-		return log_ret;
+	if (log_ret) {
+		panic("log failed");
+	}
 
 	/* and consequently mark it dirty. */
 	buffer_mark_dirty(newguy->sv_buf);
@@ -2973,10 +2981,6 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	int result, result2;
 	struct record *r;
 
-	//kprintf("SFS_LINK\n");
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
-
 	KASSERT(file->vn_fs == dir->vn_fs);
 
 	reserve_buffers(4, SFS_BLOCKSIZE);
@@ -2984,11 +2988,15 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	/* directory must be locked first */
 	lock_acquire(sv->sv_lock);
 
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+
 	/* Just create a link */
 	result = sfs_dir_link(sv, name, f->sv_ino, &slot, t);
 	if (result) {
 		unreserve_buffers(4, SFS_BLOCKSIZE);
 		lock_release(sv->sv_lock);
+		abort(t);
 		return result;
 	}
 
@@ -3003,6 +3011,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 		unreserve_buffers(4, SFS_BLOCKSIZE);
 		lock_release(f->sv_lock);
 		lock_release(sv->sv_lock);
+		abort(t);
 		return result;
 	}
 
@@ -3015,7 +3024,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	r = makerec_ilink(f->sv_ino,inodeptr->sfi_linkcount);
 	int log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	buffer_mark_dirty(f->sv_buf);
 
@@ -3127,14 +3136,14 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	r = makerec_ilink(newguy->sv_ino, new_inodeptr->sfi_linkcount);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	dir_inodeptr->sfi_linkcount++;
 
 	r = makerec_ilink(sv->sv_ino, dir_inodeptr->sfi_linkcount);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	buffer_mark_dirty(newguy->sv_buf);
 	sfs_release_inode(newguy);
@@ -3166,6 +3175,7 @@ die_simple:
 die_early:
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
+	abort(t);
 	return result;
 }
 
@@ -3190,12 +3200,6 @@ sfs_rmdir(struct vnode *v, const char *name)
 	int log_ret;
 	struct record *r;
 
-	//kprintf("SFS_RMDIR\n");
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
-	// if (strcmp(name, "bbbb\n") && t->id > 500)
-	// 	kprintf("rmdir id: %d %s \n",t->id, name);
-
 	/* Cannot remove the . or .. entries from a directory! */
 	if (!strcmp(name, ".") || !strcmp(name, "..")) {
 		return EINVAL;
@@ -3208,6 +3212,9 @@ sfs_rmdir(struct vnode *v, const char *name)
 	if (result) {
 		goto die_early;
 	}
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+
 	dir_inodeptr = buffer_map(sv->sv_buf);
 	hold_buffer_cache(t,sv->sv_buf);
 
@@ -3252,7 +3259,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 	r = makerec_ilink(sv->sv_ino,dir_inodeptr->sfi_linkcount);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	buffer_mark_dirty(sv->sv_buf);
 
@@ -3261,7 +3268,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 	r = makerec_ilink(victim->sv_ino,victim_inodeptr->sfi_linkcount);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	buffer_mark_dirty(victim->sv_buf);
 	/* buffer released below */
@@ -3277,7 +3284,7 @@ die_simple:
 die_early:
  	unreserve_buffers(4, SFS_BLOCKSIZE);
  	lock_release(sv->sv_lock);
-
+ 	abort(t);
 	return result;
 }
 
@@ -3361,7 +3368,7 @@ sfs_remove(struct vnode *dir, const char *name)
 		struct record *r = makerec_ilink(victim->sv_ino,victim_inodeptr->sfi_linkcount);
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 		hold_buffer_cache(t,victim->sv_buf);
 	}
 
@@ -3477,10 +3484,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	int found_dir1;
 	int log_ret;
 	struct record *r;
-
-	//kprintf("SFS_RENAME\n");
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
 
 	/* The VFS layer is supposed to enforce this */
 	KASSERT(absdir1->vn_fs == absdir2->vn_fs);
@@ -3672,6 +3675,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		VOP_DECREF(&obj2->sv_v);
 		obj2 = NULL;
 	}
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+
 	result = sfs_lookonce(dir2, name2, &obj2, true, &slot2);
 	if (result==0) {
 		KASSERT(obj2 != NULL);
@@ -3692,6 +3698,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 	/* Postpone this check to simplify the error cleanup. */
 	if (result != 0 && result != ENOENT) {
+		abort(t);
 		goto out1;
 	}
 
@@ -3703,6 +3710,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	obj1 = NULL;
 	result = sfs_lookonce(dir1, name1, &obj1, false, &slot1);
 	if (result) {
+		abort(t);
 		goto out1;
 	}
 	/*
@@ -3714,6 +3722,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		result = 0;
 		VOP_DECREF(&obj1->sv_v);
 		obj1 = NULL;
+		abort(t);
 		goto out1;
 	}
 	lock_acquire(obj1->sv_lock);
@@ -3722,6 +3731,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		lock_release(obj1->sv_lock);
 		VOP_DECREF(&obj1->sv_v);
 		obj1 = NULL;
+		abort(t);
 		goto out1;
 	}
 	obj1_inodeptr = buffer_map(obj1->sv_buf);
@@ -3729,6 +3739,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 	result = sfs_load_inode(dir2);
 	if (result) {
+		abort(t);
 		goto out2;
 	}
 	dir2_inodeptr = buffer_map(dir2->sv_buf);
@@ -3736,6 +3747,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 	result = sfs_load_inode(dir1);
 	if (result) {
+		abort(t);
 		goto out3;
 	}
 	dir1_inodeptr = buffer_map(dir1->sv_buf);
@@ -3747,6 +3759,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	 */
 	if (dir2_inodeptr->sfi_linkcount==0) {
 		result = ENOENT;
+		abort(t);
 		goto out4;
 	}
 
@@ -3769,16 +3782,19 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		if (obj1_inodeptr->sfi_type == SFS_TYPE_DIR) {
 			if (obj2_inodeptr->sfi_type != SFS_TYPE_DIR) {
 				result = ENOTDIR;
+				abort(t);
 				goto out4;
 			}
 			result = sfs_dir_checkempty(obj2);
 			if (result) {
+				abort(t);
 				goto out4;
 			}
 
 			/* Remove the name */
 			result = sfs_dir_unlink(dir2, slot2, t);
 			if (result) {
+				abort(t);
 				goto out4;
 			}
 
@@ -3790,7 +3806,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
 			log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(dir2->sv_buf);
 			obj2_inodeptr->sfi_linkcount -= 2;
@@ -3798,7 +3814,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			r = makerec_ilink(obj2->sv_ino,obj2_inodeptr->sfi_linkcount);
 			log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(obj2->sv_buf);
 
@@ -3809,12 +3825,14 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			KASSERT(obj1->sv_type == SFS_TYPE_FILE);
 			if (obj2->sv_type != SFS_TYPE_FILE) {
 				result = EISDIR;
+				abort(t);
 				goto out4;
 			}
 
 			/* Remove the name */
 			result = sfs_dir_unlink(dir2, slot2, t);
 			if (result) {
+				abort(t);
 				goto out4;
 			}
 
@@ -3825,7 +3843,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			r = makerec_ilink(obj2->sv_ino,obj2_inodeptr->sfi_linkcount);
 			log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(obj2->sv_buf);
 		}
@@ -3852,10 +3870,11 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	r = makerec_dir(dir2->sv_ino,slot2,obj1->sv_ino,name2);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	result = sfs_writedir(dir2, &sd, slot2, t);
 	if (result) {
+		abort(t);
 		goto out4;
 	}
 
@@ -3864,7 +3883,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	buffer_mark_dirty(obj1->sv_buf);
 
@@ -3872,6 +3891,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		/* Directory: reparent it */
 		result = sfs_readdir(obj1, &sd, DOTDOTSLOT);
 		if (result) {
+			abort(t);
 			goto recover1;
 		}
 		if (strcmp(sd.sfd_name, "..")) {
@@ -3885,6 +3905,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		sd.sfd_ino = dir2->sv_ino;
 		result = sfs_writedir(obj1, &sd, DOTDOTSLOT, t);
 		if (result) {
+			abort(t);
 			goto recover1;
 		}
 		dir1_inodeptr->sfi_linkcount--;
@@ -3892,7 +3913,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		r = makerec_ilink(dir1->sv_ino,dir1_inodeptr->sfi_linkcount);
 		log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		buffer_mark_dirty(dir1->sv_buf);
 		dir2_inodeptr->sfi_linkcount++;
@@ -3900,13 +3921,14 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
 		log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		buffer_mark_dirty(dir2->sv_buf);
 	}
 
 	result = sfs_dir_unlink(dir1, slot1, t);
 	if (result) {
+		abort(t);
 		goto recover2;
 	}
 	obj1_inodeptr->sfi_linkcount--;
@@ -3914,12 +3936,13 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
 	log_ret = check_and_record(r,t);
 	if (log_ret)
-		return log_ret;
+		panic("log failed");
 
 	buffer_mark_dirty(obj1->sv_buf);
 
 	KASSERT(result==0);
-
+	// Commit
+	commit(t, absdir1->vn_fs, 1);
 	if (0) {
 		/* Only reached on error */
     recover2:
@@ -3929,7 +3952,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			r = makerec_dir(obj1->sv_ino,DOTDOTSLOT,sd.sfd_ino,sd.sfd_name);
 			log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			result2 = sfs_writedir(obj1, &sd, DOTDOTSLOT, t);
 			if (result2) {
@@ -3940,7 +3963,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			r = makerec_ilink(dir1->sv_ino,dir1_inodeptr->sfi_linkcount);
 			log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(dir1->sv_buf);
 			dir2_inodeptr->sfi_linkcount--;
@@ -3948,7 +3971,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
 			log_ret = check_and_record(r,t);
 			if (log_ret)
-				return log_ret;
+				panic("log failed");
 
 			buffer_mark_dirty(dir2->sv_buf);
 		}
@@ -3962,7 +3985,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
 		log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		buffer_mark_dirty(obj1->sv_buf);
 	}
@@ -4331,7 +4354,7 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 		r = makerec_itype(ino,forcetype);
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
-			return log_ret;
+			panic("log failed");
 
 		buffer_mark_dirty(sv->sv_buf);
 	}
@@ -4556,6 +4579,7 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	daddr_t block = JN_LOCATION(fs);
 	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
 	if (tmp == NULL) {
+		panic("ENOMEM commit failed");
 		return ENOMEM;
 	}
 	max = 0;
@@ -4656,18 +4680,21 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	// cleanup
 	result = 0;
 
+	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
+		buf_decref((struct buf *)array_get(t->bufs, ix-1));
+		array_remove(t->bufs, ix-1);
+	}
+	array_destroy(t->bufs);
+	kfree(t);
+	kfree(tmp);
+	return result;
+
 	err:
-		for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
-			buf_decref((struct buf *)array_get(t->bufs, ix-1));
-			array_remove(t->bufs, ix-1);
-		}
-		array_destroy(t->bufs);
-		kfree(t);
-		kfree(tmp);
-		return result;
+		panic("commit failed");
+		return 1;
 }
 
-/* To be called in case of error so system doesnt think transaction exists
+// To be called in case of error so system doesnt think transaction exists
 static
 void abort(struct transaction *t){
 	int ix;
@@ -4684,10 +4711,10 @@ void abort(struct transaction *t){
 	KASSERT(num_active_transactions > 0);
 	num_active_transactions--;
 	if (num_active_transactions == 0)
-		cv_signal(no_active_transactions,transaction_lock);
+		cv_broadcast(no_active_transactions,transaction_lock);
 	lock_release(transaction_lock);
 }
-*/
+
 
 static
 int check_and_record(struct record *r, struct transaction *t) {
