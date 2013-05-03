@@ -4651,8 +4651,6 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 		if (do_checkpoint) {
 			checkpoint(fs);
 		}
-		else
-			lock_release(checkpoint_lock);
 	}
 
 	// cleanup
