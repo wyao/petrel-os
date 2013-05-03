@@ -4633,6 +4633,8 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 		// Clear log buf
 		log_buf_offset = 0;
 	}
+	KASSERT(journal_offset <= MAX_JN_ENTRIES);
+
 	// Update journal summary block
 	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
 	if (s == NULL) {
