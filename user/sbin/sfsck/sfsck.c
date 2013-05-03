@@ -391,7 +391,7 @@ addmemory(uint32_t ino, uint32_t linkcount)
 #ifdef NO_REALLOC
 		void *p = domalloc(newmax * sizeof(*inodes));
 		if (inodes) {
-			memcpy(p, inodes, ninodes);
+			memcpy(p, inodes, ninodes * sizeof(*inodes));
 			free(inodes);
 		}
 		inodes = p;
