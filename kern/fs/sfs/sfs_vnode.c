@@ -1929,10 +1929,7 @@ sfs_reclaim(struct vnode *v)
 	vnodearray_remove(sfs->sfs_vnodes, ix);
 
 	// TODO: To fix nested transaction bug, reclaim will NEVER checkpoint
-	result = commit(t, v->vn_fs, 0);
-	if (result) {
-		panic("panic for now");
-	}
+	commit(t, v->vn_fs, 0);
 
 	VOP_CLEANUP(&sv->sv_v);
 
@@ -2680,10 +2677,7 @@ sfs_truncate(struct vnode *v, off_t len)
 
 	result = sfs_dotruncate(v, len, t);
 
-	result = commit(t, v->vn_fs, 1);
-	if (result) {
-		panic("panic for now");
-	}
+	commit(t, v->vn_fs, 1);
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(sv->sv_lock);
@@ -2900,10 +2894,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 		lock_release(sv->sv_lock);
 
 		// Commit
-		result = commit(t, v->vn_fs, 1);
-		if (result) {
-			panic("panic for now");
-		}
+		commit(t, v->vn_fs, 1);
 		return 0;
 	}
 
@@ -2948,10 +2939,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 
 	*ret = &newguy->sv_v;
 
-	result = commit(t, v->vn_fs, 1);
-	if (result) {
-		panic("panic for now");
-	}
+	commit(t, v->vn_fs, 1);
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 	lock_release(newguy->sv_lock);
@@ -3028,10 +3016,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 
 	buffer_mark_dirty(f->sv_buf);
 
-	result = commit(t, dir->vn_fs, 1);
-	if (result) {
-		panic("panic for now");
-	}
+	commit(t, dir->vn_fs, 1);
 
 	sfs_release_inode(f);
 	unreserve_buffers(4, SFS_BLOCKSIZE);
@@ -3154,10 +3139,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	lock_release(sv->sv_lock);
 	VOP_DECREF(&newguy->sv_v);
 
-	result = commit(t, v->vn_fs, 1);
-	if (result) {
-		panic("panic for now");
-	}
+	commit(t, v->vn_fs, 1);
 
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
@@ -3220,11 +3202,13 @@ sfs_rmdir(struct vnode *v, const char *name)
 
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
+		abort(t);
 		goto die_simple;
 	}
 
 	result = sfs_lookonce(sv, name, &victim, true, &slot);
 	if (result) {
+		abort(t);
 		goto die_simple;
 	}
 	victim_inodeptr = buffer_map(victim->sv_buf);
@@ -3232,22 +3216,26 @@ sfs_rmdir(struct vnode *v, const char *name)
 
 	if (victim->sv_ino == SFS_ROOT_LOCATION) {
 		result = EPERM;
+		abort(t);
 		goto die_total;
 	}
 
 	/* Only allowed on directories */
 	if (victim_inodeptr->sfi_type != SFS_TYPE_DIR) {
 		result = ENOTDIR;
+		abort(t);
 		goto die_total;
 	}
 
 	result = sfs_dir_checkempty(victim);
 	if (result) {
+		abort(t);
 		goto die_total;
 	}
 
 	result = sfs_dir_unlink(sv, slot, t);
 	if (result) {
+		abort(t);
 		goto die_total;
 	}
 
@@ -3274,6 +3262,8 @@ sfs_rmdir(struct vnode *v, const char *name)
 	/* buffer released below */
 
 	result = sfs_dotruncate(&victim->sv_v, 0, t);
+	
+	commit(t, v->vn_fs, 1);
 
 die_total:
 	sfs_release_inode(victim);
@@ -3284,7 +3274,6 @@ die_simple:
 die_early:
  	unreserve_buffers(4, SFS_BLOCKSIZE);
  	lock_release(sv->sv_lock);
- 	abort(t);
 	return result;
 }
 
@@ -3379,10 +3368,8 @@ sfs_remove(struct vnode *dir, const char *name)
 	/* Discard the reference that sfs_lookonce got us */
 	VOP_DECREF(&victim->sv_v);
 
-	result = commit(t, dir->vn_fs, 1);
-	if (result) {
-		panic("panic for now");
-	}
+	commit(t, dir->vn_fs, 1);
+
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	lock_release(sv->sv_lock);
