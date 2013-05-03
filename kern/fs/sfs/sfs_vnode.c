@@ -3066,7 +3066,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct transaction *t = create_transaction();
 
 	hold_buffer_cache(t,sv->sv_buf);
-	
+
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
 		abort(t);
@@ -4456,13 +4456,11 @@ create_transaction(void) {
 
 	// Synchronization for checkpointing
 	lock_acquire(checkpoint_lock);
-	while (in_checkpoint)
+	while (in_checkpoint) {
 		cv_wait(checkpoint_cleared,checkpoint_lock);
-	lock_release(checkpoint_lock);
-
-	lock_acquire(transaction_lock);	
+	}
 	num_active_transactions++;
-	lock_release(transaction_lock);
+	lock_release(checkpoint_lock);
 	// kprintf("transaction created (%d total)\n",num_active_transactions);
 
 	lock_acquire(transaction_id_lock);
@@ -4475,20 +4473,17 @@ create_transaction(void) {
 static 
 int checkpoint(struct fs *fs){
 	int result = 0;
-
 	lock_acquire(checkpoint_lock);
+
 	if (in_checkpoint == 0)
 		in_checkpoint = 1;
 	else {
 		lock_release(checkpoint_lock);
 		return 0;
 	}
-	lock_release(checkpoint_lock);
-
-	lock_acquire(transaction_lock);
 	while (num_active_transactions > 0)
-		cv_wait(no_active_transactions,transaction_lock);
-	lock_release(transaction_lock);
+		cv_wait(no_active_transactions,checkpoint_lock);
+	lock_release(checkpoint_lock);
 
 	// kprintf("In a checkpoint\n");
 
@@ -4498,7 +4493,6 @@ int checkpoint(struct fs *fs){
 	// ...then update journal summary block
 	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
 	if (s == NULL) {
-		kfree(s);
 		result = ENOMEM;
 		goto finish;
 	}
@@ -4514,6 +4508,7 @@ int checkpoint(struct fs *fs){
 
 	finish:
 	lock_acquire(checkpoint_lock);
+	KASSERT(num_active_transactions == 0);
 	in_checkpoint = 0;
 	cv_broadcast(checkpoint_cleared,checkpoint_lock);
 	lock_release(checkpoint_lock);
@@ -4655,16 +4650,16 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	lock_release(log_buf_lock); // This also act as on disk journal log here
 
 	// Checkpoint signaling
-	lock_acquire(transaction_lock);
+	lock_acquire(checkpoint_lock);
 	KASSERT(num_active_transactions > 0);
 	num_active_transactions--;
 	if (num_active_transactions == 0)
-		cv_broadcast(no_active_transactions,transaction_lock);
-	lock_release(transaction_lock);
+		cv_signal(no_active_transactions,checkpoint_lock);
+	lock_release(checkpoint_lock);
 	// kprintf("transaction completed (%d left)\n",num_active_transactions);
 
-	if (journal_offset + log_buf_offset > (int)(0.7 * MAX_JN_ENTRIES)){
-		if (do_checkpoint) {
+	if (journal_offset + log_buf_offset > (int)(0.25 * MAX_JN_ENTRIES)){
+		if (do_checkpoint && num_active_transactions == 0) {
 			checkpoint(fs);
 		}
 	}
@@ -4699,12 +4694,12 @@ void abort(struct transaction *t){
 	kfree(t);
 
 	// Synchro for checkpointing
-	lock_acquire(transaction_lock);
+	lock_acquire(checkpoint_lock);
 	KASSERT(num_active_transactions > 0);
 	num_active_transactions--;
 	if (num_active_transactions == 0)
-		cv_broadcast(no_active_transactions,transaction_lock);
-	lock_release(transaction_lock);
+		cv_signal(no_active_transactions,checkpoint_lock);
+	lock_release(checkpoint_lock);
 }
 
 
