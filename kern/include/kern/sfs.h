@@ -72,6 +72,7 @@
 #define REC_ILINK 3
 #define REC_DIR 4
 #define REC_BITMAP 5
+#define REC_COMMIT 6
 
 /*
  * On-disk journal superblock

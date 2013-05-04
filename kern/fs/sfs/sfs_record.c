@@ -180,9 +180,14 @@ void apply_record(struct fs *fs, struct record *r){
 		KASSERT(sfs_bmap_r(fs,inodeptr,fileblock,&dirblock) == 0);
 		KASSERT(sfs_readblock(fs,dirblock,data,SFS_BLOCKSIZE) == 0);
 		memcpy(&data[fileoff],&sd,sizeof(struct sfs_dir));
+		kprintf("%d\n", dirblock);
 		KASSERT(sfs_writeblock(fs,dirblock,data,SFS_BLOCKSIZE) == 0);
 		kfree(inodeptr);
 		break;
+
+		case REC_COMMIT:
+			break;
+
 		default:
 		panic("Invalid record");
 	}

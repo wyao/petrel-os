@@ -866,6 +866,7 @@ sfs_writedir(struct sfs_vnode *sv, struct sfs_dir *sd, int slot, struct transact
 	struct uio ku;
 	off_t actualpos;
 	int result;
+	struct record *r;
 
 	/* Compute the actual position in the directory. */
 	
@@ -881,6 +882,11 @@ sfs_writedir(struct sfs_vnode *sv, struct sfs_dir *sd, int slot, struct transact
 	if (result) {
 		return result;
 	}
+
+	r = makerec_dir(sv->sv_ino,slot,sd->sfd_ino,sd->sfd_name);
+	int log_ret = check_and_record(r,t);
+	if (log_ret)
+		panic("log failed");
 
 	/* Should not end up with a partial entry! */
 	if (ku.uio_resid > 0) {
@@ -1057,7 +1063,6 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot, st
 	int emptyslot = -1;
 	int result;
 	struct sfs_dir sd;
-	struct record *r;
 
 	KASSERT(lock_do_i_hold(sv->sv_lock));
 	
@@ -1087,11 +1092,6 @@ sfs_dir_link(struct sfs_vnode *sv, const char *name, uint32_t ino, int *slot, st
 	sd.sfd_ino = ino;
 	strcpy(sd.sfd_name, name);
 
-	r = makerec_dir(sv->sv_ino,emptyslot,ino,name);
-	int log_ret = check_and_record(r,t);
-	if (log_ret)
-		panic("log failed");
-
 	/* Hand back the slot, if so requested. */
 	if (slot) {
 		*slot = emptyslot;
@@ -1114,7 +1114,6 @@ int
 sfs_dir_unlink(struct sfs_vnode *sv, int slot, struct transaction *t)
 {
 	struct sfs_dir sd;
-	struct record *r;
 
 	// synchronous write with lock held...bleh
 	KASSERT(lock_do_i_hold(sv->sv_lock));
@@ -1122,11 +1121,6 @@ sfs_dir_unlink(struct sfs_vnode *sv, int slot, struct transaction *t)
 	/* Initialize a suitable directory entry... */
 	bzero(&sd, sizeof(sd));
 	sd.sfd_ino = SFS_NOINO;
-
-	r = makerec_dir(sv->sv_ino,slot,0,NULL);
-	int log_ret = check_and_record(r,t);
-	if (log_ret)
-		panic("log failed");
 
 	/* ... and write it */
 	return sfs_writedir(sv, &sd, slot, t);
@@ -4085,6 +4079,12 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 		return ENOMEM;
 	}
 	max = 0;
+
+	// Create commit record
+	struct record *r = kmalloc(sizeof(struct record));
+	r->transaction_type = REC_COMMIT;
+	check_and_record(r, t);
+
 	lock_acquire(log_buf_lock);
 	if (log_buf_offset > 0) {
 		// Partial write

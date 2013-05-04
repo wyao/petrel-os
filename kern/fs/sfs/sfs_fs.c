@@ -535,7 +535,7 @@ sfs_mount(const char *device)
 static
 void first_pass(struct record *r) {
 	unsigned id = r->transaction_id;
-	if (!bitmap_isset(b, id)) {
+	if (r->transaction_type == REC_COMMIT && !bitmap_isset(b, id)) {
 		bitmap_mark(b, id);
 	}
 }
@@ -552,7 +552,7 @@ void recover(struct sfs_fs *sfs) {
 	if (b == NULL) {
 		panic("Cannot create bitmap");
 	}
-
+	journal_iterator(&sfs->sfs_absfs, print_transaction);
 	// First pass
 	journal_iterator(&sfs->sfs_absfs, first_pass);
 
