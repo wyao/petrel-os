@@ -3256,12 +3256,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 	// ENTRYPOINT
 	struct transaction *t = create_transaction();
-	
-	hold_buffer_cache(t,obj1->sv_buf);
-	hold_buffer_cache(t,dir2->sv_buf);
-	hold_buffer_cache(t,dir1->sv_buf);
-	hold_buffer_cache(t,obj2->sv_buf);
-
 
 	if (obj2 != NULL) {
 		/*
@@ -3299,6 +3293,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			if (log_ret)
 				panic("log failed");
 
+			hold_buffer_cache(t,dir2->sv_buf);
 			buffer_mark_dirty(dir2->sv_buf);
 			obj2_inodeptr->sfi_linkcount -= 2;
 
@@ -3307,6 +3302,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			if (log_ret)
 				panic("log failed");
 
+			hold_buffer_cache(t,obj2->sv_buf);
 			buffer_mark_dirty(obj2->sv_buf);
 
 			/* ignore errors on this */
@@ -3336,6 +3332,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			if (log_ret)
 				panic("log failed");
 
+			hold_buffer_cache(t, obj2->sv_buf);
 			buffer_mark_dirty(obj2->sv_buf);
 		}
 
@@ -3372,6 +3369,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	if (log_ret)
 		panic("log failed");
 
+	hold_buffer_cache(t, obj1->sv_buf);
 	buffer_mark_dirty(obj1->sv_buf);
 
 	if (obj1->sv_type == SFS_TYPE_DIR) {
@@ -3402,6 +3400,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		if (log_ret)
 			panic("log failed");
 
+		hold_buffer_cache(t, dir1->sv_buf);
 		buffer_mark_dirty(dir1->sv_buf);
 		dir2_inodeptr->sfi_linkcount++;
 
@@ -3410,6 +3409,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		if (log_ret)
 			panic("log failed");
 
+		hold_buffer_cache(t, dir2->sv_buf);
 		buffer_mark_dirty(dir2->sv_buf);
 	}
 
@@ -3425,6 +3425,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	if (log_ret)
 		panic("log failed");
 
+	hold_buffer_cache(t, obj1->sv_buf);
 	buffer_mark_dirty(obj1->sv_buf);
 
 	KASSERT(result==0);
@@ -3446,6 +3447,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			if (log_ret)
 				panic("log failed");
 
+			hold_buffer_cache(t, dir1->sv_buf);
 			buffer_mark_dirty(dir1->sv_buf);
 			dir2_inodeptr->sfi_linkcount--;
 
@@ -3454,6 +3456,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			if (log_ret)
 				panic("log failed");
 
+			hold_buffer_cache(t, dir2->sv_buf);
 			buffer_mark_dirty(dir2->sv_buf);
 		}
     recover1:
@@ -3468,6 +3471,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		if (log_ret)
 			panic("log failed");
 
+		hold_buffer_cache(t, obj1->sv_buf);
 		buffer_mark_dirty(obj1->sv_buf);
 	}
 
