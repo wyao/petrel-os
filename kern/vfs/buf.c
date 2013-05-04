@@ -38,6 +38,7 @@
 #include <vfs.h>
 #include <fs.h>
 #include <buf.h>
+#include <sfs.h>
 
 DECLARRAY(buf);
 DEFARRAY(buf, /*noinline*/);
@@ -1176,6 +1177,9 @@ sync_fs_buffers(struct fs *fs)
 				KASSERT(j<i);
 				i = j;
 			}
+		}
+		else if(b->b_dirty && in_checkpoint) {
+			KASSERT(b->refcnt == 0);
 		}
 	}
 
