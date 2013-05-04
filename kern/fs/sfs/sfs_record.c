@@ -177,10 +177,10 @@ void apply_record(struct fs *fs, struct record *r){
 		fileblock = actual_pos/SFS_BLOCKSIZE;
 		fileoff = actual_pos % SFS_BLOCKSIZE;
 
-		sfs_bmap_r(fs,inodeptr,fileblock,&dirblock);
-		sfs_readblock(fs,dirblock,data,SFS_BLOCKSIZE);
+		KASSERT(sfs_bmap_r(fs,inodeptr,fileblock,&dirblock) == 0);
+		KASSERT(sfs_readblock(fs,dirblock,data,SFS_BLOCKSIZE) == 0);
 		memcpy(&data[fileoff],&sd,sizeof(struct sfs_dir));
-		sfs_writeblock(fs,dirblock,data,SFS_BLOCKSIZE);
+		KASSERT(sfs_writeblock(fs,dirblock,data,SFS_BLOCKSIZE) == 0);
 		kfree(inodeptr);
 		break;
 		default:
