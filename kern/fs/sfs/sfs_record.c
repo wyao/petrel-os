@@ -66,21 +66,16 @@ struct record *makerec_ilink(uint32_t inode_num, uint32_t linkcount){
 }
 struct record *makerec_dir(uint32_t parent_inode, uint32_t slot, uint32_t inode, const char *sfd_name){
 	struct record *r = kmalloc(sizeof(struct record));
-	int i;
 	if (r != NULL){
 		r->transaction_type = REC_DIR;
 		r->changed.r_directory.parent_inode = parent_inode;
 		r->changed.r_directory.slot = slot;
 		r->changed.r_directory.inode = inode;
 
+		bzero(&r->changed.r_directory.sfd_name,SFS_NAMELEN);
+
 		if (sfd_name != NULL) {
-			for (i=0; i<SFS_NAMELEN; i++){
-				r->changed.r_directory.sfd_name[i] = sfd_name[i];
-				if (sfd_name[i] == 0)
-					break;
-			}
-			if (i >= SFS_NAMELEN) // Name was too long
-				kfree(r);
+			strcpy(r->changed.r_directory.sfd_name,sfd_name);
 		}
 	}
 	return r;
@@ -100,13 +95,12 @@ void apply_record(struct fs *fs, struct record *r){
 	struct sfs_inode *inodeptr;
 	struct sfs_fs *sfs;
 	struct sfs_dir sd;
-	uint32_t *indir, *iddata, *dirblock;
-	uint32_t fileblock, fileoff;
+	uint32_t *indir, *iddata;
+	uint32_t fileblock, fileoff, dirblock;
 	off_t actual_pos;
-	char *data;
+	char data[SFS_BLOCKSIZE];
 
 	inodeptr = kmalloc(sizeof(struct sfs_inode));
-	data = kmalloc(SFS_BLOCKSIZE);
 
 	switch(r->transaction_type){
 		case REC_INODE:
@@ -130,7 +124,8 @@ void apply_record(struct fs *fs, struct record *r){
 			}
 			// Changed contents of indirect block
 			else {
-				sfs_readblock(fs,*indir,iddata,SFS_BLOCKSIZE);
+				sfs_readblock(fs,*indir,data,SFS_BLOCKSIZE);
+				iddata = (uint32_t *)data;
 				iddata[r->changed.r_inode.offset] = r->changed.r_inode.blockno;
 				sfs_writeblock(fs,*indir,iddata,SFS_BLOCKSIZE);
 			}
@@ -167,17 +162,18 @@ void apply_record(struct fs *fs, struct record *r){
 
 		case REC_DIR:
 		sd.sfd_ino = r->changed.r_directory.inode;
-		// KASSERT(strcpy(sd.sfd_name,r->changed.r_directory.sfd_name)==0);
+		bzero(sd.sfd_name,SFS_NAMELEN);
+		strcpy(sd.sfd_name,r->changed.r_directory.sfd_name);
 
 		inodeptr = get_inode(fs,r->changed.r_directory.parent_inode);
 		actual_pos = sizeof(struct sfs_dir)*r->changed.r_directory.slot;
 		fileblock = actual_pos/SFS_BLOCKSIZE;
 		fileoff = actual_pos % SFS_BLOCKSIZE;
 
-		sfs_bmap_r(fs,inodeptr,fileblock,dirblock);
-		sfs_readblock(fs,*dirblock,data,SFS_BLOCKSIZE);
+		sfs_bmap_r(fs,inodeptr,fileblock,&dirblock);
+		sfs_readblock(fs,dirblock,data,SFS_BLOCKSIZE);
 		memcpy(&data[fileoff],&sd,sizeof(struct sfs_dir));
-		sfs_writeblock(fs,*dirblock,data,SFS_BLOCKSIZE);		
+		sfs_writeblock(fs,dirblock,data,SFS_BLOCKSIZE);
 		
 		break;
 		default:
@@ -185,7 +181,6 @@ void apply_record(struct fs *fs, struct record *r){
 	}
 
 	kfree(inodeptr);
-	kfree(data);
 }
 
 static 
