@@ -564,6 +564,9 @@ void recover(struct sfs_fs *sfs) {
 	sync_fs_buffers(&sfs->sfs_absfs);
 
 	// TODO: set journal entries to 0
+	s->num_entries = 0;
+	s->max_id = 0;
+	sfs_writeblock(&sfs->sfs_absfs, JN_SUMMARY_LOCATION(sfs), s, SFS_BLOCKSIZE);
 
 	bitmap_destroy(b);
 	kfree(s);
