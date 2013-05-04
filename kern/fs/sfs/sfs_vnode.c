@@ -408,17 +408,17 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 		if(indir == 3)
 		{
 			inodeptr->sfi_tindirect = next_block;
-			r = makerec_inode(sv->sv_ino,3,1,0,block);
+			r = makerec_inode(sv->sv_ino,3,1,0,next_block);
 		}
 		else if(indir == 2)
 		{
 			inodeptr->sfi_dindirect = next_block;
-			r = makerec_inode(sv->sv_ino,2,1,0,block);
+			r = makerec_inode(sv->sv_ino,2,1,0,next_block);
 		}
 		else if(indir == 1)
 		{
 			inodeptr->sfi_indirect = next_block;
-			r = makerec_inode(sv->sv_ino,1,1,0,block);
+			r = makerec_inode(sv->sv_ino,1,1,0,next_block);
 		}
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
