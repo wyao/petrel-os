@@ -155,7 +155,8 @@ void apply_record(struct fs *fs, struct record *r){
 		else
 			bitmap_unmark(sfs->sfs_freemap,r->changed.r_bitmap.index);
 		sfs->sfs_freemapdirty = 1;
-		// TODO: sync buffer explicitly
+		// Sync explicitly
+		sync_fs_buffers(fs);
 		break;
 
 		case REC_DIR:
