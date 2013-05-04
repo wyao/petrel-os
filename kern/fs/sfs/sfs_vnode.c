@@ -2389,27 +2389,22 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 		return EEXIST;
 	}
 
-	// ENTRYPOINT: Begin transaction
-	struct transaction *t = create_transaction();
-
 	if (result==0) {
 		/* We got a file; load its vnode and return */
-		result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, &newguy,false, t);
+		result = sfs_loadvnode(sfs, ino, SFS_TYPE_INVAL, &newguy,false, NULL);
 		if (result) {
 			unreserve_buffers(4, SFS_BLOCKSIZE);
 			lock_release(sv->sv_lock);
-			// Abort
-			abort(t);
 			return result;
 		}
 		*ret = &newguy->sv_v;
 		unreserve_buffers(4, SFS_BLOCKSIZE);
 		lock_release(sv->sv_lock);
-
-		// Commit
-		commit(t, v->vn_fs, 1);
 		return 0;
 	}
+
+	// ENTRYPOINT: Begin transaction
+	struct transaction *t = create_transaction();
 
 	/* Didn't exist - create it */
 	result = sfs_makeobj(sfs, SFS_TYPE_FILE, &newguy, t);
@@ -3844,7 +3839,6 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 	}
 	/* we'll release this by hand */
 	inodeptr = buffer_map(sv->sv_buf);
-	hold_buffer_cache(t,sv->sv_buf);
 
 	/*
 	 * FORCETYPE is set if we're creating a new file, because the
@@ -3855,6 +3849,7 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 		KASSERT(inodeptr->sfi_type == SFS_TYPE_INVAL);
 		inodeptr->sfi_type = forcetype;
 
+		hold_buffer_cache(t,sv->sv_buf);
 		r = makerec_itype(ino,forcetype);
 		int log_ret = check_and_record(r,t);
 		if (log_ret)
@@ -4166,6 +4161,17 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 
 	lock_release(log_buf_lock); // This also act as on disk journal log here
 
+	// cleanup
+	result = 0;
+
+	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
+		buf_decref((struct buf *)array_get(t->bufs, ix-1));
+		array_remove(t->bufs, ix-1);
+	}
+	array_destroy(t->bufs);
+	kfree(t);
+	kfree(tmp);
+
 	// Checkpoint signaling
 	lock_acquire(checkpoint_lock);
 	KASSERT(num_active_transactions > 0);
@@ -4177,19 +4183,10 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	if (journal_offset + log_buf_offset > (int)(0.1 * MAX_JN_ENTRIES)){
 		if (do_checkpoint && num_active_transactions == 0) {
 			checkpoint(fs);
+			// (void)checkpoint;
 		}
 	}
 
-	// cleanup
-	result = 0;
-
-	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
-		buf_decref((struct buf *)array_get(t->bufs, ix-1));
-		array_remove(t->bufs, ix-1);
-	}
-	array_destroy(t->bufs);
-	kfree(t);
-	kfree(tmp);
 	return result;
 
 	err:
