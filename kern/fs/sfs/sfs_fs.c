@@ -46,6 +46,7 @@
 #include <synch.h>
 #include <vm.h>
 #include <bitmap.h>
+#include <thread.h>
 
 /* Shortcuts for the size macros in kern/sfs.h */
 #define SFS_FS_BITMAPSIZE(sfs)  SFS_BITMAPSIZE((sfs)->sfs_super.sp_nblocks)

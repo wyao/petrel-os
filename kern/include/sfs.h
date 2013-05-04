@@ -149,7 +149,6 @@ void journal_iterator(struct fs *fs, void (*f)(struct record *));
 void fs_journal_iterator(struct fs *fs, struct bitmap *b, void (*f)(struct fs *,struct record *));
 void apply_record(struct fs *fs, struct record *r);
 
-
 ////////////////////////////////////////////////////////////
 // Checkpoint synchronization
 

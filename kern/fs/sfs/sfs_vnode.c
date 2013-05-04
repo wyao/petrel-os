@@ -2570,30 +2570,27 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	}
 	dir_inodeptr = buffer_map(sv->sv_buf);
 
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
-
-	hold_buffer_cache(t,sv->sv_buf);
 
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
-		abort(t);
 		goto die_simple;
 	}
 
 	/* Look up the name */
 	result = sfs_dir_findname(sv, name, &ino, NULL, NULL);
 	if (result!=0 && result!=ENOENT) {
-		abort(t);
 		goto die_simple;
 	}
 
 	/* If it exists, fail */
 	if (result==0) {
 		result = EEXIST;
-		abort(t);
 		goto die_simple;
 	}
+
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+	hold_buffer_cache(t,sv->sv_buf);
 
 	result = sfs_makeobj(sfs, SFS_TYPE_DIR, &newguy, t);
 	if (result) {
@@ -2645,6 +2642,8 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	if (log_ret)
 		panic("log failed");
 
+	commit(t, v->vn_fs, 1);
+
 	buffer_mark_dirty(newguy->sv_buf);
 	sfs_release_inode(newguy);
 	buffer_mark_dirty(sv->sv_buf);
@@ -2657,7 +2656,6 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	unreserve_buffers(4, SFS_BLOCKSIZE);
 
 	KASSERT(result==0);
-	commit(t, v->vn_fs, 1);
 	return result;
 
 die_uncreate:
@@ -2707,44 +2705,41 @@ sfs_rmdir(struct vnode *v, const char *name)
 	if (result) {
 		goto die_early;
 	}
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
 
 	dir_inodeptr = buffer_map(sv->sv_buf);
-	hold_buffer_cache(t,sv->sv_buf);
 
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
-		abort(t);
 		goto die_simple;
 	}
 
 	result = sfs_lookonce(sv, name, &victim, true, &slot);
 	if (result) {
-		abort(t);
 		goto die_simple;
 	}
 	victim_inodeptr = buffer_map(victim->sv_buf);
-	hold_buffer_cache(t,victim->sv_buf);
 
 	if (victim->sv_ino == SFS_ROOT_LOCATION) {
 		result = EPERM;
-		abort(t);
 		goto die_total;
 	}
 
 	/* Only allowed on directories */
 	if (victim_inodeptr->sfi_type != SFS_TYPE_DIR) {
 		result = ENOTDIR;
-		abort(t);
 		goto die_total;
 	}
 
 	result = sfs_dir_checkempty(victim);
 	if (result) {
-		abort(t);
 		goto die_total;
 	}
+
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+	hold_buffer_cache(t,sv->sv_buf);
+	hold_buffer_cache(t,victim->sv_buf);
+
 
 	result = sfs_dir_unlink(sv, slot, t);
 	if (result) {
@@ -3174,14 +3169,12 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		VOP_DECREF(&obj2->sv_v);
 		obj2 = NULL;
 	}
-	// ENTRYPOINT
-	struct transaction *t = create_transaction();
+
 
 	result = sfs_lookonce(dir2, name2, &obj2, true, &slot2);
 	if (result==0) {
 		KASSERT(obj2 != NULL);
 		obj2_inodeptr = buffer_map(obj2->sv_buf);
-		hold_buffer_cache(t,obj2->sv_buf);
 	} else if (result==ENOENT) {
 		/*
 		 * sfs_lookonce returns a null vnode and an empty slot
@@ -3197,7 +3190,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 	/* Postpone this check to simplify the error cleanup. */
 	if (result != 0 && result != ENOENT) {
-		abort(t);
 		goto out1;
 	}
 
@@ -3209,7 +3201,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	obj1 = NULL;
 	result = sfs_lookonce(dir1, name1, &obj1, false, &slot1);
 	if (result) {
-		abort(t);
 		goto out1;
 	}
 	/*
@@ -3221,7 +3212,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		result = 0;
 		VOP_DECREF(&obj1->sv_v);
 		obj1 = NULL;
-		abort(t);
 		goto out1;
 	}
 	lock_acquire(obj1->sv_lock);
@@ -3230,27 +3220,21 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		lock_release(obj1->sv_lock);
 		VOP_DECREF(&obj1->sv_v);
 		obj1 = NULL;
-		abort(t);
 		goto out1;
 	}
 	obj1_inodeptr = buffer_map(obj1->sv_buf);
-	hold_buffer_cache(t,obj1->sv_buf);
 
 	result = sfs_load_inode(dir2);
 	if (result) {
-		abort(t);
 		goto out2;
 	}
 	dir2_inodeptr = buffer_map(dir2->sv_buf);
-	hold_buffer_cache(t,dir2->sv_buf);
 
 	result = sfs_load_inode(dir1);
 	if (result) {
-		abort(t);
 		goto out3;
 	}
 	dir1_inodeptr = buffer_map(dir1->sv_buf);
-	hold_buffer_cache(t,dir1->sv_buf);
 
 	/*
 	 * One final piece of paranoia: make sure dir2 hasn't been rmdir'd.
@@ -3258,7 +3242,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	 */
 	if (dir2_inodeptr->sfi_linkcount==0) {
 		result = ENOENT;
-		abort(t);
 		goto out4;
 	}
 
@@ -3270,6 +3253,15 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	/* At this point we should have valid slots in both dirs. */
 	KASSERT(slot1>=0);
 	KASSERT(slot2>=0);
+
+	// ENTRYPOINT
+	struct transaction *t = create_transaction();
+	
+	hold_buffer_cache(t,obj1->sv_buf);
+	hold_buffer_cache(t,dir2->sv_buf);
+	hold_buffer_cache(t,dir1->sv_buf);
+	hold_buffer_cache(t,obj2->sv_buf);
+
 
 	if (obj2 != NULL) {
 		/*
@@ -3366,10 +3358,6 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	sd.sfd_ino = obj1->sv_ino;
 	strcpy(sd.sfd_name, name2);
 
-	r = makerec_dir(dir2->sv_ino,slot2,obj1->sv_ino,name2);
-	log_ret = check_and_record(r,t);
-	if (log_ret)
-		panic("log failed");
 
 	result = sfs_writedir(dir2, &sd, slot2, t);
 	if (result) {
@@ -3440,18 +3428,12 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	buffer_mark_dirty(obj1->sv_buf);
 
 	KASSERT(result==0);
-	// Commit
-	commit(t, absdir1->vn_fs, 1);
+
 	if (0) {
 		/* Only reached on error */
     recover2:
 		if (obj1->sv_type == SFS_TYPE_DIR) {
 			sd.sfd_ino = dir1->sv_ino;
-
-			r = makerec_dir(obj1->sv_ino,DOTDOTSLOT,sd.sfd_ino,sd.sfd_name);
-			log_ret = check_and_record(r,t);
-			if (log_ret)
-				panic("log failed");
 
 			result2 = sfs_writedir(obj1, &sd, DOTDOTSLOT, t);
 			if (result2) {
@@ -3488,6 +3470,9 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 
 		buffer_mark_dirty(obj1->sv_buf);
 	}
+
+	// Commit
+	commit(t, absdir1->vn_fs, 1);
 
  out4:
  	sfs_release_inode(dir1);
@@ -3961,6 +3946,11 @@ create_transaction(void) {
 		return NULL;
 	}
 
+	lock_acquire(transaction_id_lock);
+	t->id = next_transaction_id;
+	next_transaction_id++;
+	lock_release(transaction_id_lock);
+
 	// Synchronization for checkpointing
 	lock_acquire(checkpoint_lock);
 	while (in_checkpoint) {
@@ -3969,24 +3959,21 @@ create_transaction(void) {
 	num_active_transactions++;
 	lock_release(checkpoint_lock);
 
-	lock_acquire(transaction_id_lock);
-	t->id = next_transaction_id;
-	next_transaction_id++;
-	lock_release(transaction_id_lock);
 	return t;
 }
 
 static 
 int checkpoint(struct fs *fs){
 	int result = 0;
-	lock_acquire(checkpoint_lock);
 
+	lock_acquire(checkpoint_lock);
 	if (in_checkpoint == 0)
 		in_checkpoint = 1;
 	else {
 		lock_release(checkpoint_lock);
 		return 0;
 	}
+	in_checkpoint = 1;
 	while (num_active_transactions > 0)
 		cv_wait(no_active_transactions,checkpoint_lock);
 	lock_release(checkpoint_lock);
@@ -3997,8 +3984,7 @@ int checkpoint(struct fs *fs){
 	// ...then update journal summary block
 	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
 	if (s == NULL) {
-		result = ENOMEM;
-		goto finish;
+		panic("Checkpoint out of memory\n");
 	}
 	sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
 	s->num_entries = 0;
@@ -4010,7 +3996,6 @@ int checkpoint(struct fs *fs){
 	journal_offset = 0;
 	next_transaction_id = 0;
 
-	finish:
 	lock_acquire(checkpoint_lock);
 	KASSERT(num_active_transactions == 0);
 	in_checkpoint = 0;
@@ -4180,11 +4165,9 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 		cv_signal(no_active_transactions,checkpoint_lock);
 	lock_release(checkpoint_lock);
 
-	if (journal_offset + log_buf_offset > (int)(0.1 * MAX_JN_ENTRIES)){
-		if (do_checkpoint && num_active_transactions == 0) {
+	if (journal_offset + log_buf_offset > (int)(0.5 * MAX_JN_ENTRIES)){
+		if (do_checkpoint)
 			checkpoint(fs);
-			// (void)checkpoint;
-		}
 	}
 
 	return result;
