@@ -4259,7 +4259,7 @@ void fs_journal_iterator(struct fs *fs, struct bitmap *b, void (*f)(struct fs *,
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
 			panic("Just panic");
 		for (j=0; j<REC_PER_BLK; j++) {
-			if (bitmap_isset(b,j))
+			if (bitmap_isset(b,r[j].transaction_id))
 				(*f)(fs,&r[j]);
 		}
 	}
