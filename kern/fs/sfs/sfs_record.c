@@ -128,24 +128,28 @@ void apply_record(struct fs *fs, struct record *r){
 				sfs_writeblock(fs,*indir,iddata,SFS_BLOCKSIZE);
 			}
 		}
+		kfree(inodeptr);
 		break;
 
 		case REC_ILINK:
 		inodeptr = get_inode(fs,r->changed.r_ilink.inode_num);
 		inodeptr->sfi_linkcount = r->changed.r_ilink.linkcount;
 		sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
+		kfree(inodeptr);
 		break;
 
 		case REC_ISIZE:
 		inodeptr = get_inode(fs,r->changed.r_isize.inode_num);
 		inodeptr->sfi_size = r->changed.r_isize.size;
 		sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
+		kfree(inodeptr);
 		break;
 
 		case REC_ITYPE:
 		inodeptr = get_inode(fs,r->changed.r_itype.inode_num);
 		inodeptr->sfi_type = r->changed.r_itype.type;
 		sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
+		kfree(inodeptr);
 		break;
 
 		case REC_BITMAP:
@@ -177,13 +181,11 @@ void apply_record(struct fs *fs, struct record *r){
 		sfs_readblock(fs,dirblock,data,SFS_BLOCKSIZE);
 		memcpy(&data[fileoff],&sd,sizeof(struct sfs_dir));
 		sfs_writeblock(fs,dirblock,data,SFS_BLOCKSIZE);
-		
+		kfree(inodeptr);
 		break;
 		default:
 		panic("Invalid record");
 	}
-
-	kfree(inodeptr);
 }
 
 static 

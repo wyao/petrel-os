@@ -210,14 +210,13 @@ sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock, struct buf **bufret, struct 
 
 	result = bitmap_alloc(sfs->sfs_freemap, diskblock);
 	if (result) {
-		struct record *r = makerec_bitmap((uint32_t)result,1);
-
-		int log_ret = check_and_record(r,t);
-		if (log_ret)
-			panic("log failed");
-
 		return result;
 	}
+	struct record *r = makerec_bitmap((uint32_t)*diskblock,1);
+	int log_ret = check_and_record(r,t);
+	if (log_ret)
+		panic("log failed");
+
 	sfs->sfs_freemapdirty = true;
 
 	lock_release(sfs->sfs_bitlock);
@@ -1508,7 +1507,6 @@ sfs_write(struct vnode *v, struct uio *uio)
 
 	KASSERT(uio->uio_rw==UIO_WRITE);
 
-	//kprintf("SFS_WRITE\n");
 	// ENTRYPOINT: Create transaction
 	struct transaction *t = create_transaction();
 
@@ -2191,7 +2189,6 @@ sfs_truncate(struct vnode *v, off_t len)
 	struct sfs_vnode *sv = v->vn_data;
 	int result;
 
-	//kprintf("SFS_TRUNCATE\n");
 	//ENTRYPOINT
 	struct transaction *t = create_transaction();
 
@@ -2361,7 +2358,6 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	uint32_t ino;
 	int result;
 	struct record *r;
-	//kprintf("SFS_CREAT\n");
 
 	lock_acquire(sv->sv_lock);
 	
@@ -2824,7 +2820,6 @@ sfs_remove(struct vnode *dir, const char *name)
 	int slot;
 	int result;
 
-	// kprintf("SFS_REMOVE\n");
 	// ENTRYPOINT: transaction is started after error checks pass
 
 	/* need to check this to avoid deadlock even in error condition */
@@ -3984,7 +3979,6 @@ create_transaction(void) {
 	}
 	num_active_transactions++;
 	lock_release(checkpoint_lock);
-	// kprintf("transaction created (%d total)\n",num_active_transactions);
 
 	lock_acquire(transaction_id_lock);
 	t->id = next_transaction_id;
@@ -4007,8 +4001,6 @@ int checkpoint(struct fs *fs){
 	while (num_active_transactions > 0)
 		cv_wait(no_active_transactions,checkpoint_lock);
 	lock_release(checkpoint_lock);
-
-	// kprintf("In a checkpoint\n");
 
 	// Checkpoint - write buffers to disk...
 	sync_fs_buffers(fs);
@@ -4181,7 +4173,6 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	if (num_active_transactions == 0)
 		cv_signal(no_active_transactions,checkpoint_lock);
 	lock_release(checkpoint_lock);
-	// kprintf("transaction completed (%d left)\n",num_active_transactions);
 
 	if (journal_offset + log_buf_offset > (int)(0.1 * MAX_JN_ENTRIES)){
 		if (do_checkpoint && num_active_transactions == 0) {
