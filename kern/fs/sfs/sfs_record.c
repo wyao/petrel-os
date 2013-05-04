@@ -100,8 +100,6 @@ void apply_record(struct fs *fs, struct record *r){
 	off_t actual_pos;
 	char data[SFS_BLOCKSIZE];
 
-	inodeptr = kmalloc(sizeof(struct sfs_inode));
-
 	switch(r->transaction_type){
 		case REC_INODE:
 		inodeptr = get_inode(fs,r->changed.r_inode.inode_num);
@@ -185,7 +183,7 @@ void apply_record(struct fs *fs, struct record *r){
 
 static 
 struct sfs_inode *get_inode(struct fs *fs, unsigned inode_num) {
-	struct sfs_inode *inodeptr;
+	struct sfs_inode *inodeptr = kmalloc(sizeof(struct sfs_inode));
 	if (sfs_readblock(fs,inode_num,inodeptr,SFS_BLOCKSIZE))
 		panic("Couldnt get inode");
 	return inodeptr;
