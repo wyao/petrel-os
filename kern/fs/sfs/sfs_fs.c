@@ -559,6 +559,11 @@ void recover(struct sfs_fs *sfs) {
 	// Second pass
 	fs_journal_iterator(&sfs->sfs_absfs, b, apply_record);
 
+	// Explicitly synch bitmap
+	sync_fs_buffers(&sfs->sfs_absfs);
+
+	// TODO: set journal entries to 0
+
 	bitmap_destroy(b);
 	kfree(s);
 }
