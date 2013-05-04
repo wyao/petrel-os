@@ -150,10 +150,16 @@ void apply_record(struct fs *fs, struct record *r){
 
 		case REC_BITMAP:
 		sfs = fs->fs_data;
-		if (r->changed.r_bitmap.setting)
-			bitmap_mark(sfs->sfs_freemap,r->changed.r_bitmap.index);
-		else
-			bitmap_unmark(sfs->sfs_freemap,r->changed.r_bitmap.index);
+		if (r->changed.r_bitmap.setting) {
+			if (!bitmap_isset(sfs->sfs_freemap,r->changed.r_bitmap.index)) {
+				bitmap_mark(sfs->sfs_freemap,r->changed.r_bitmap.index);
+			}
+		}
+		else {
+			if (bitmap_isset(sfs->sfs_freemap,r->changed.r_bitmap.index)) {
+				bitmap_unmark(sfs->sfs_freemap,r->changed.r_bitmap.index);
+			}
+		}
 		sfs->sfs_freemapdirty = 1;
 		break;
 
