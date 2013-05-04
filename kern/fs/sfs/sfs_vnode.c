@@ -2579,6 +2579,7 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	struct transaction *t = create_transaction();
 
 	hold_buffer_cache(t,sv->sv_buf);
+	hold_buffer_cache(t,newguy->sv_buf);
 
 	if (dir_inodeptr->sfi_linkcount == 0) {
 		result = ENOENT;
