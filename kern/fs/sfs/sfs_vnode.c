@@ -2435,7 +2435,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	/* Update the linkcount of the new file */
 	new_inodeptr->sfi_linkcount++;
 
-	r = makerec_ilink(sv->sv_ino,new_inodeptr->sfi_linkcount);
+	r = makerec_ilink(newguy->sv_ino,new_inodeptr->sfi_linkcount);
 	int log_ret = check_and_record(r,t);
 	if (log_ret) {
 		panic("log failed");

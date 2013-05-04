@@ -553,7 +553,7 @@ void recover(struct sfs_fs *sfs) {
 	if (b == NULL) {
 		panic("Cannot create bitmap");
 	}
-	journal_iterator(&sfs->sfs_absfs, print_transaction);
+	// journal_iterator(&sfs->sfs_absfs, print_transaction);
 	// First pass
 	journal_iterator(&sfs->sfs_absfs, first_pass);
 
