@@ -105,6 +105,7 @@ void apply_record(struct fs *fs, struct record *r){
 		inodeptr = get_inode(fs,r->changed.r_inode.inode_num);
 		if (r->changed.r_inode.id_lvl == 0){
 			inodeptr->sfi_direct[r->changed.r_inode.offset] = r->changed.r_inode.blockno;
+			sfs_writeblock(fs,r->changed.r_inode.inode_num,inodeptr,SFS_BLOCKSIZE);
 		}
 		else {
 			// Find level of indirection
@@ -180,7 +181,6 @@ void apply_record(struct fs *fs, struct record *r){
 		KASSERT(sfs_bmap_r(fs,inodeptr,fileblock,&dirblock) == 0);
 		KASSERT(sfs_readblock(fs,dirblock,data,SFS_BLOCKSIZE) == 0);
 		memcpy(&data[fileoff],&sd,sizeof(struct sfs_dir));
-		kprintf("%d\n", dirblock);
 		KASSERT(sfs_writeblock(fs,dirblock,data,SFS_BLOCKSIZE) == 0);
 		kfree(inodeptr);
 		break;
