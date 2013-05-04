@@ -107,20 +107,6 @@ stdio_init(){
 	kfree(consoleR);
 	kfree(consoleW);
 	kfree(consoleE);
-
-	/*
-	 * Set current working directory to root
-	 */
-	char *root = NULL;
-	struct vnode *rootdir;
-	root = kstrdup("emu0:/");
-	if (root == NULL)
-		panic("stdio_init: couldnt get root directory\n");
-	int result = vfs_open(root,O_RDONLY,0664,&rootdir);
-	if (result)
-		panic("stdio_init: couldnt get root directory\n");
-	curthread->t_cwd = rootdir;
-	kfree(root);
 }
 
 /*
