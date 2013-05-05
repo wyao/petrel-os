@@ -119,6 +119,8 @@ int check_and_record(struct record *r, struct transaction *t);
 static
 int checkpoint(struct fs *fs);
 
+static
+void flush_log_buf(struct fs *fs);
 
 ////////////////////////////////////////////////////////////
 //
@@ -1444,7 +1446,6 @@ sfs_reclaim(struct vnode *v)
 	}
 	vnodearray_remove(sfs->sfs_vnodes, ix);
 
-	// TODO: To fix nested transaction bug, reclaim will NEVER checkpoint
 	commit(t, v->vn_fs, 0);
 
 	VOP_CLEANUP(&sv->sv_v);
@@ -4041,6 +4042,8 @@ int record(struct record *r) {
 	if (log_buf_offset == BUF_RECORDS) {
 		// TODO: flush, could fail here?
 		panic("Log buffer filed");
+
+		log_buf_offset = 0;
 	}
 	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
 	log_buf_offset++;
@@ -4048,110 +4051,19 @@ int record(struct record *r) {
 	return 0;
 }
 
-// TODO: track active transactions for checkpointing
 /*
  * Synch note: log_buf_lock doubles as mutex lock for on disk journal
  */
 static
 int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
-	int i, result, part;
-	unsigned ix, max;
-	daddr_t block = JN_LOCATION(fs);
-	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
-	if (tmp == NULL) {
-		panic("ENOMEM commit failed");
-		return ENOMEM;
-	}
-	max = 0;
+	unsigned ix;
 
 	// Create commit record
 	struct record *r = kmalloc(sizeof(struct record));
 	r->transaction_type = REC_COMMIT;
 	check_and_record(r, t);
 
-	lock_acquire(log_buf_lock);
-	if (log_buf_offset > 0) {
-		// Partial write
-		i = 0;
-		if (journal_offset % REC_PER_BLK != 0) {
-			part = journal_offset % REC_PER_BLK;
-			// Read
-			result = sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
-				tmp, SFS_BLOCKSIZE);
-			if (result) {
-				lock_release(log_buf_lock);
-				goto err;
-			}
-			// Construct
-			memcpy(&tmp[part], (const void *)log_buf,
-				sizeof(struct record) * (REC_PER_BLK - part));
-			// Write
-			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
-				tmp, SFS_BLOCKSIZE);
-
-			if (log_buf_offset > REC_PER_BLK - part) {
-				i += REC_PER_BLK - part;
-				journal_offset += REC_PER_BLK - part;
-			}
-			else {
-				i += log_buf_offset;
-				journal_offset += log_buf_offset;
-
-			}
-		}
-		// Write full blocks
-		while (log_buf_offset-i >= REC_PER_BLK) {
-			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
-				&log_buf[i], SFS_BLOCKSIZE);
-			if (result) {
-				lock_release(log_buf_lock);
-				goto err;
-			}
-			i += REC_PER_BLK;
-			journal_offset += REC_PER_BLK;
-		}
-		KASSERT(i<=log_buf_offset);
-		// Partial write TODO: make sure not at end of log_buf
-		if (log_buf_offset != i) {
-			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
-				&log_buf[i], SFS_BLOCKSIZE);
-			if (result) {
-				lock_release(log_buf_lock);
-				goto err;
-			}
-			journal_offset += log_buf_offset - i;
-			i += log_buf_offset - i;
-		}
-		KASSERT(i == log_buf_offset);
-		// Record max
-		for (i=0; i< log_buf_offset; i++) {
-			if (log_buf[i].transaction_id > max) {
-				max = log_buf[i].transaction_id;
-			}
-		}
-		// Clear log buf
-		log_buf_offset = 0;
-	}
-	KASSERT(journal_offset <= MAX_JN_ENTRIES);
-
-	// Update journal summary block
-	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
-	if (s == NULL) {
-		lock_release(log_buf_lock);
-		result = ENOMEM;
-		goto err;
-	}
-	sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
-	s->num_entries = journal_offset;
-	if (max > s->max_id)
-		s->max_id = max;
-	sfs_writeblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
-	kfree(s);
-
-	lock_release(log_buf_lock); // This also act as on disk journal log here
-
-	// cleanup
-	result = 0;
+	flush_log_buf(fs);
 
 	for (ix = array_num((const struct array*)t->bufs); ix>0; ix--) {
 		buf_decref((struct buf *)array_get(t->bufs, ix-1));
@@ -4159,7 +4071,6 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	}
 	array_destroy(t->bufs);
 	kfree(t);
-	kfree(tmp);
 
 	// Checkpoint signaling
 	lock_acquire(checkpoint_lock);
@@ -4174,11 +4085,7 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 			checkpoint(fs);
 	}
 
-	return result;
-
-	err:
-		panic("commit failed");
-		return 1;
+	return 0;
 }
 
 // To be called in case of error so system doesnt think transaction exists
@@ -4214,6 +4121,99 @@ int check_and_record(struct record *r, struct transaction *t) {
 	if (ret)
 		return ret;
 	return 0;
+}
+
+static
+void flush_log_buf(struct fs *fs) {
+	int i, result, part;
+	unsigned max;
+	daddr_t block = JN_LOCATION(fs);
+	struct record *tmp = kmalloc(SFS_BLOCKSIZE);
+	if (tmp == NULL) {
+		panic("ENOMEM commit failed");
+	}
+	max = 0;
+
+	lock_acquire(log_buf_lock);
+	if (log_buf_offset > 0) {
+		// Partial write
+		i = 0;
+		if (journal_offset % REC_PER_BLK != 0) {
+			part = journal_offset % REC_PER_BLK;
+			// Read
+			result = sfs_readblock(fs, block + journal_offset / REC_PER_BLK,
+				tmp, SFS_BLOCKSIZE);
+			if (result) {
+				lock_release(log_buf_lock);
+				panic("flush_log_buf");
+			}
+			// Construct
+			memcpy(&tmp[part], (const void *)log_buf,
+				sizeof(struct record) * (REC_PER_BLK - part));
+			// Write
+			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
+				tmp, SFS_BLOCKSIZE);
+
+			if (log_buf_offset > REC_PER_BLK - part) {
+				i += REC_PER_BLK - part;
+				journal_offset += REC_PER_BLK - part;
+			}
+			else {
+				i += log_buf_offset;
+				journal_offset += log_buf_offset;
+
+			}
+		}
+		kfree(tmp);
+		// Write full blocks
+		while (log_buf_offset-i >= REC_PER_BLK) {
+			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
+				&log_buf[i], SFS_BLOCKSIZE);
+			if (result) {
+				lock_release(log_buf_lock);
+				panic("flush_log_buf");
+			}
+			i += REC_PER_BLK;
+			journal_offset += REC_PER_BLK;
+		}
+		KASSERT(i<=log_buf_offset);
+		if (log_buf_offset != i) {
+			result = sfs_writeblock(fs, block + journal_offset / REC_PER_BLK,
+				&log_buf[i], SFS_BLOCKSIZE);
+			if (result) {
+				lock_release(log_buf_lock);
+				panic("flush_log_buf");
+			}
+			journal_offset += log_buf_offset - i;
+			i += log_buf_offset - i;
+		}
+		KASSERT(i == log_buf_offset);
+		// Record max
+		for (i=0; i< log_buf_offset; i++) {
+			if (log_buf[i].transaction_id > max) {
+				max = log_buf[i].transaction_id;
+			}
+		}
+		// Clear log buf
+		log_buf_offset = 0;
+	}
+	KASSERT(journal_offset <= MAX_JN_ENTRIES);
+
+	// Update journal summary block
+	struct sfs_jn_summary *s = kmalloc(SFS_BLOCKSIZE);
+	if (s == NULL) {
+		lock_release(log_buf_lock);
+		result = ENOMEM;
+		panic("flush_log_buf");
+	}
+	sfs_readblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
+	s->num_entries = journal_offset;
+	if (max > s->max_id)
+		s->max_id = max;
+	sfs_writeblock(fs, JN_SUMMARY_LOCATION(fs), s, SFS_BLOCKSIZE);
+	kfree(s);
+
+	lock_release(log_buf_lock); // This also act as on disk journal log here
 }
 
 void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
