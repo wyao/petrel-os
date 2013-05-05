@@ -4228,7 +4228,6 @@ void journal_iterator(struct fs *fs, void (*f)(struct record *)) {
 		panic("Cannot from journal summary");
 	entries = s->num_entries;
 	kfree(s);
-	kprintf("Num entries in journal: %d\n", entries);
 	// Pass it to function
 	for(i=0; i<(ROUNDUP(entries, REC_PER_BLK)/REC_PER_BLK); i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
@@ -4252,7 +4251,6 @@ void fs_journal_iterator(struct fs *fs, struct bitmap *b, void (*f)(struct fs *,
 		panic("Cannot from journal summary");
 	entries = s->num_entries;
 	kfree(s);
-	kprintf("Num entries in journal: %d\n", entries);
 	// Pass it to function
 	for(i=0; i<(ROUNDUP(entries, REC_PER_BLK)/REC_PER_BLK); i++) {
 		if (sfs_readblock(fs, block + i, r, SFS_BLOCKSIZE))
