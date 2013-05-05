@@ -4038,11 +4038,11 @@ static
 int record(struct record *r, struct fs *fs) {
 	KASSERT(sizeof(struct record) == RECORD_SIZE);
 
-	lock_acquire(log_buf_lock);
 	if (log_buf_offset == BUF_RECORDS) {
 		flush_log_buf(fs);
 		KASSERT(log_buf_offset == 0);
 	}
+	lock_acquire(log_buf_lock);
 	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
 	log_buf_offset++;
 	lock_release(log_buf_lock);
