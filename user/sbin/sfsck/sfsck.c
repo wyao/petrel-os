@@ -309,7 +309,7 @@ check_bitmap(void)
 	uint32_t alloccount=0, freecount=0, i, j;
 	int bchanged;
 
-	for (i=SFS_JN_SIZE + SFS_MAP_LOCATION + 1 + 3; i<bitblocks; i++) {
+	for (i=SFS_MAP_LOCATION; i<bitblocks; i++) {
 		diskread(bits, SFS_MAP_LOCATION+i);
 		swapbits(bits);
 		found = bitmapdata + i*SFS_BLOCKSIZE;
