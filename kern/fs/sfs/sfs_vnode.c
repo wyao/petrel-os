@@ -105,7 +105,7 @@ static
 int hold_buffer_cache(struct transaction *t, struct buf *buf);
 
 static
-int record(struct record *r);
+int record(struct record *r, struct fs *fs);
 
 static
 int commit(struct transaction *t, struct fs *fs, int do_checkpoint);
@@ -114,7 +114,7 @@ static
 void abort(struct transaction *t);
 
 static
-int check_and_record(struct record *r, struct transaction *t);
+int check_and_record(struct record *r, struct transaction *t, struct fs *fs);
 
 static
 int checkpoint(struct fs *fs);
@@ -215,7 +215,7 @@ sfs_balloc(struct sfs_fs *sfs, uint32_t *diskblock, struct buf **bufret, struct 
 		return result;
 	}
 	struct record *r = makerec_bitmap((uint32_t)*diskblock,1);
-	int log_ret = check_and_record(r,t);
+	int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret)
 		panic("log failed");
 
@@ -243,7 +243,7 @@ sfs_bfree(struct sfs_fs *sfs, uint32_t diskblock, struct transaction *t)
 	bitmap_unmark(sfs->sfs_freemap, diskblock);
 
 	struct record *r = makerec_bitmap(diskblock,0);
-	check_and_record(r,t);
+	check_and_record(r,t,&sfs->sfs_absfs);
 
 	sfs->sfs_freemapdirty = true;
 	lock_release(sfs->sfs_bitlock);
@@ -343,7 +343,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 
 			// Record for adding direct block
 			r = makerec_inode(sv->sv_ino,0,0,fileblock,block);
-			int log_ret = check_and_record(r,t);
+			int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -421,7 +421,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 			inodeptr->sfi_indirect = next_block;
 			r = makerec_inode(sv->sv_ino,1,1,0,next_block);
 		}
-		int log_ret = check_and_record(r,t);
+		int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 		if (log_ret)
 			panic("log failed");
 
@@ -490,7 +490,7 @@ sfs_bmap(struct sfs_vnode *sv, uint32_t fileblock,
 			iddata[idoff] = next_block;
 
 			r = makerec_inode(sv->sv_ino,i,0,idoff,next_block);
-			int log_ret = check_and_record(r,t);
+			int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -795,7 +795,7 @@ sfs_io(struct sfs_vnode *sv, struct uio *uio, struct transaction *t)
 		inodeptr->sfi_size = uio->uio_offset;
 
 		struct record *r = makerec_isize(sv->sv_ino,uio->uio_offset);
-		int log_ret = check_and_record(r,t);
+		int log_ret = check_and_record(r,t,sv->sv_v.vn_fs);
 		if (log_ret)
 			panic("log failed");
 
@@ -886,7 +886,7 @@ sfs_writedir(struct sfs_vnode *sv, struct sfs_dir *sd, int slot, struct transact
 	}
 
 	r = makerec_dir(sv->sv_ino,slot,sd->sfd_ino,sd->sfd_name);
-	int log_ret = check_and_record(r,t);
+	int log_ret = check_and_record(r,t,sv->sv_v.vn_fs);
 	if (log_ret)
 		panic("log failed");
 
@@ -1787,7 +1787,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 			inodeptr->sfi_direct[i] = 0;
 
 			r = makerec_inode(sv->sv_ino,0,0,i,0);
-			int log_ret = check_and_record(r,t);
+			int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 		}
@@ -2050,7 +2050,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 						{
 							inodeptr->sfi_indirect = 0;
 							r = makerec_inode(sv->sv_ino,1,1,0,0);
-							int log_ret = check_and_record(r,t);
+							int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 							if (log_ret)
 								panic("log failed");
 						}
@@ -2098,7 +2098,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 						inodeptr->sfi_dindirect = 0;
 
 						r = makerec_inode(sv->sv_ino,2,1,0,0);
-						int log_ret = check_and_record(r,t);
+						int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 						if (log_ret)
 							panic("log failed");
 
@@ -2138,7 +2138,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 				inodeptr->sfi_tindirect = 0;
 
 				r = makerec_inode(sv->sv_ino,3,1,0,0);
-				int log_ret = check_and_record(r,t);
+				int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 				if (log_ret)
 					panic("log failed");
 			}
@@ -2157,7 +2157,7 @@ sfs_dotruncate(struct vnode *v, off_t len, struct transaction *t)
 	inodeptr->sfi_size = len;
 
 	r = makerec_isize(sv->sv_ino,len);
-	int log_ret = check_and_record(r,t);
+	int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret)
 		panic("log failed");
 
@@ -2437,7 +2437,7 @@ sfs_creat(struct vnode *v, const char *name, bool excl, mode_t mode,
 	new_inodeptr->sfi_linkcount++;
 
 	r = makerec_ilink(newguy->sv_ino,new_inodeptr->sfi_linkcount);
-	int log_ret = check_and_record(r,t);
+	int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret) {
 		panic("log failed");
 	}
@@ -2519,7 +2519,7 @@ sfs_link(struct vnode *dir, const char *name, struct vnode *file)
 	inodeptr->sfi_linkcount++;
 
 	r = makerec_ilink(f->sv_ino,inodeptr->sfi_linkcount);
-	int log_ret = check_and_record(r,t);
+	int log_ret = check_and_record(r,t,dir->vn_fs);
 	if (log_ret)
 		panic("log failed");
 
@@ -2632,14 +2632,14 @@ sfs_mkdir(struct vnode *v, const char *name, mode_t mode)
 	new_inodeptr->sfi_linkcount += 2;
 
 	r = makerec_ilink(newguy->sv_ino, new_inodeptr->sfi_linkcount);
-	log_ret = check_and_record(r,t);
+	log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret)
 		panic("log failed");
 
 	dir_inodeptr->sfi_linkcount++;
 
 	r = makerec_ilink(sv->sv_ino, dir_inodeptr->sfi_linkcount);
-	log_ret = check_and_record(r,t);
+	log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret)
 		panic("log failed");
 
@@ -2754,7 +2754,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 	dir_inodeptr->sfi_linkcount--;
 
 	r = makerec_ilink(sv->sv_ino,dir_inodeptr->sfi_linkcount);
-	log_ret = check_and_record(r,t);
+	log_ret = check_and_record(r,t,v->vn_fs);
 	if (log_ret)
 		panic("log failed");
 
@@ -2763,7 +2763,7 @@ sfs_rmdir(struct vnode *v, const char *name)
 	victim_inodeptr->sfi_linkcount -= 2;
 
 	r = makerec_ilink(victim->sv_ino,victim_inodeptr->sfi_linkcount);
-	log_ret = check_and_record(r,t);
+	log_ret = check_and_record(r,t,v->vn_fs);
 	if (log_ret)
 		panic("log failed");
 
@@ -2863,7 +2863,7 @@ sfs_remove(struct vnode *dir, const char *name)
 		buffer_mark_dirty(victim->sv_buf);
 
 		struct record *r = makerec_ilink(victim->sv_ino,victim_inodeptr->sfi_linkcount);
-		int log_ret = check_and_record(r,t);
+		int log_ret = check_and_record(r,t,dir->vn_fs);
 		if (log_ret)
 			panic("log failed");
 		hold_buffer_cache(t,victim->sv_buf);
@@ -3290,7 +3290,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			dir2_inodeptr->sfi_linkcount--;
 
 			r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
-			log_ret = check_and_record(r,t);
+			log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -3299,7 +3299,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			obj2_inodeptr->sfi_linkcount -= 2;
 
 			r = makerec_ilink(obj2->sv_ino,obj2_inodeptr->sfi_linkcount);
-			log_ret = check_and_record(r,t);
+			log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -3329,7 +3329,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			obj2_inodeptr->sfi_linkcount--;
 
 			r = makerec_ilink(obj2->sv_ino,obj2_inodeptr->sfi_linkcount);
-			log_ret = check_and_record(r,t);
+			log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -3366,7 +3366,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	obj1_inodeptr->sfi_linkcount++;
 
 	r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
-	log_ret = check_and_record(r,t);
+	log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret)
 		panic("log failed");
 
@@ -3397,7 +3397,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		dir1_inodeptr->sfi_linkcount--;
 
 		r = makerec_ilink(dir1->sv_ino,dir1_inodeptr->sfi_linkcount);
-		log_ret = check_and_record(r,t);
+		log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 		if (log_ret)
 			panic("log failed");
 
@@ -3406,7 +3406,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		dir2_inodeptr->sfi_linkcount++;
 
 		r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
-		log_ret = check_and_record(r,t);
+		log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 		if (log_ret)
 			panic("log failed");
 
@@ -3422,7 +3422,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 	obj1_inodeptr->sfi_linkcount--;
 
 	r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
-	log_ret = check_and_record(r,t);
+	log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 	if (log_ret)
 		panic("log failed");
 
@@ -3444,7 +3444,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			dir1_inodeptr->sfi_linkcount++;
 
 			r = makerec_ilink(dir1->sv_ino,dir1_inodeptr->sfi_linkcount);
-			log_ret = check_and_record(r,t);
+			log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -3453,7 +3453,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 			dir2_inodeptr->sfi_linkcount--;
 
 			r = makerec_ilink(dir2->sv_ino,dir2_inodeptr->sfi_linkcount);
-			log_ret = check_and_record(r,t);
+			log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 			if (log_ret)
 				panic("log failed");
 
@@ -3468,7 +3468,7 @@ sfs_rename(struct vnode *absdir1, const char *name1,
 		obj1_inodeptr->sfi_linkcount--;
 
 		r = makerec_ilink(obj1->sv_ino,obj1_inodeptr->sfi_linkcount);
-		log_ret = check_and_record(r,t);
+		log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 		if (log_ret)
 			panic("log failed");
 
@@ -3841,7 +3841,7 @@ sfs_loadvnode(struct sfs_fs *sfs, uint32_t ino, int forcetype,
 
 		hold_buffer_cache(t,sv->sv_buf);
 		r = makerec_itype(ino,forcetype);
-		int log_ret = check_and_record(r,t);
+		int log_ret = check_and_record(r,t,&sfs->sfs_absfs);
 		if (log_ret)
 			panic("log failed");
 
@@ -4035,15 +4035,13 @@ int hold_buffer_cache(struct transaction *t, struct buf *buf) {
 }
 
 static
-int record(struct record *r) {
+int record(struct record *r, struct fs *fs) {
 	KASSERT(sizeof(struct record) == RECORD_SIZE);
 
 	lock_acquire(log_buf_lock);
 	if (log_buf_offset == BUF_RECORDS) {
-		// TODO: flush, could fail here?
-		panic("Log buffer filed");
-
-		log_buf_offset = 0;
+		flush_log_buf(fs);
+		KASSERT(log_buf_offset == 0);
 	}
 	memcpy(&log_buf[log_buf_offset], (const void *)r, sizeof(struct record));
 	log_buf_offset++;
@@ -4061,7 +4059,7 @@ int commit(struct transaction *t, struct fs *fs, int do_checkpoint) {
 	// Create commit record
 	struct record *r = kmalloc(sizeof(struct record));
 	r->transaction_type = REC_COMMIT;
-	check_and_record(r, t);
+	check_and_record(r, t, fs);
 
 	flush_log_buf(fs);
 
@@ -4111,12 +4109,13 @@ void abort(struct transaction *t){
 
 
 static
-int check_and_record(struct record *r, struct transaction *t) {
+int check_and_record(struct record *r, struct transaction *t,
+		struct fs *fs) {
 	int ret;
 	if (r == NULL)
 		return ENOMEM;
 	r->transaction_id = t->id;
-	ret = record(r);
+	ret = record(r, fs);
 	kfree(r);
 	if (ret)
 		return ret;
