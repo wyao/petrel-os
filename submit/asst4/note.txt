@@ -1,0 +1,6 @@
+A sample of our tests was selected and compiled together under tests.sh for submission.
+
+Please note that unless sfsck is modified, the blocks that are marked for our journal
+will be incorrectly deteremined to be "erroneously shown allocated in bitmap" by sfsck.
+By default, we reserve 513 blocks for the journal, but this can easily be changed by
+modifying sfs.h.
