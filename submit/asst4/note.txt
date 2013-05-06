@@ -4,3 +4,25 @@ Please note that unless sfsck is modified, the blocks that are marked for our jo
 will be incorrectly deteremined to be "erroneously shown allocated in bitmap" by sfsck.
 By default, we reserve 513 blocks for the journal, but this can easily be changed by
 modifying sfs.h.
+
+We generally followed our design docs. This is the general structure of our code:
+sfs_vnode.c
+	create_transaction()
+	checkpoint()
+	hold_buffer_cache() // To enforce write ahead logging
+	record() // Places record in in-memory journal buffer
+	commit()
+	abort()
+	check_and_record() // Generic function that sets up the record and calls record()
+	flush_log_buf() // Flushes the in-memory log buffer to disk
+	journal_iterator() // Generic iterator that takes a function and applies it
+	fs_journal_iterator() // A slightly modified used in recovery
+sfs_fs.c
+	first_pass() // Creates bitmap of only transactions that commit
+	recover()
+	print_transaction() // To be passed to journal_iterator()
+sfs_record.c
+	makerec_*() // Makes the various records
+	apply_record()
+	sfs_bmap_r() // Code borrowed from sfs_bmap for recovery purposes
+mksfs.c // Changed to reserve journal
