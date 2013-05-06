@@ -561,7 +561,9 @@ void recover(struct sfs_fs *sfs) {
 	fs_journal_iterator(&sfs->sfs_absfs, b, apply_record);
 
 	// Explicitly synch bitmap
-	sync_fs_buffers(&sfs->sfs_absfs);
+	//lock_acquire(sfs->sfs_bitlock);
+	sfs_mapio(sfs,UIO_WRITE);
+	//lock_release(sfs->sfs_bitlock);
 
 	// Set journal entries to 0
 	s->num_entries = 0;
