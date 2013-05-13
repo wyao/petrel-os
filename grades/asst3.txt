@@ -1,0 +1,26 @@
+/* ASST2 Grade
+ * CS161 Course Staff
+ * 4/12/2013
+ */
+
+Total: 82/100
+
+Codereading questions: 9/10
+  D3. Note that the TLB miss can also be caused by the instruction itself being
+      on a page that is not memory-resident.
+
+  M1. a. It'll be once per allocation also.
+
+Design document: 23/30
+  - Thorough coverage of fault control flow.
+  - You don't cover synch for writeback, handling ELF segments and permissions,
+    or AS routines in any detail---talking about the data structures for these
+    problems more would also have been good.
+
+Implementation: 50/60
+  - /testbin/badcall fails on open(); probably an A2 problem.
+  - fork() runs out of memory for /testbin/randcall; probably a leak, maybe
+    VM-related.
+  - All of the triplefoo tests only work if you use enough memory that swapping
+    isn't an issue---you have some synch issue with swap, most likely.
+  - /testbin/malloctest 6 fails (TLB modify trap panic)
